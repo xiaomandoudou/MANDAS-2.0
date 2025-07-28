@@ -29,7 +29,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Mandas Modular Agent System - API Gateway",
     description="脊椎 (Spine) - 任务调度中心 API Gateway",
-    version="0.5.0",
+    version="0.6.0",
+    openapi_url="/mandas/openapi.json",
     lifespan=lifespan
 )
 
@@ -58,28 +59,28 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 app.include_router(health.router, tags=["health"])
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(auth.router, prefix="/mandas/v1/auth", tags=["auth"])
 app.include_router(
     tasks.router, 
-    prefix="/api/v1/tasks", 
+    prefix="/mandas/v1/tasks", 
     tags=["tasks"],
     dependencies=[Depends(get_current_user)]
 )
 app.include_router(
     documents.router, 
-    prefix="/api/v1/documents", 
+    prefix="/mandas/v1/documents", 
     tags=["documents"],
     dependencies=[Depends(get_current_user)]
 )
 app.include_router(
     tools.router,
-    prefix="/api/v1/tools",
+    prefix="/mandas/v1/tools",
     tags=["tools"],
     dependencies=[Depends(get_current_user)]
 )
 app.include_router(
     memory.router,
-    prefix="/api/v1/memory", 
+    prefix="/mandas/v1/memory", 
     tags=["memory"],
     dependencies=[Depends(get_current_user)]
 )
@@ -89,7 +90,7 @@ app.include_router(
 async def root():
     return {
         "message": "Mandas Modular Agent System - API Gateway",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "description": "脊椎 (Spine) - 任务调度中心",
         "status": "running"
     }

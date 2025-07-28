@@ -189,12 +189,15 @@ async def test_api_endpoints():
             print(f"❌ 健康检查失败: {response.status_code}")
             return False
     except requests.exceptions.ConnectionError:
-        print("⚠️ API Gateway未运行，跳过端点测试 - 需要解决psycopg2依赖问题")
+        print("⚠️ API Gateway未运行，跳过端点测试")
         return True
     
     v06_endpoints = [
-        "/api/v1/tools",
-        "/api/v1/memory/query"
+        "/mandas/v1/auth/login",
+        "/mandas/v1/tasks/",
+        "/mandas/v1/documents/",
+        "/mandas/v1/tools/",
+        "/mandas/v1/memory/query"
     ]
     
     for endpoint in v06_endpoints:
