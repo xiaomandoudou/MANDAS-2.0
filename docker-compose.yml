@@ -126,6 +126,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./services/agent-worker/tools.d:/app/tools.d:ro
+      - ./services/agent-worker/configs:/app/configs:ro
       - ./logs:/app/logs
     privileged: true
 

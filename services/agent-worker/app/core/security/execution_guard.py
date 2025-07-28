@@ -36,7 +36,7 @@ class DockerSandbox:
         try:
             host_config = self.docker_client.api.create_host_config(
                 mem_limit=limits.memory,
-                nano_cpus=int(limits.cpu_quota * 1e4),  # Convert to nano CPUs
+                nano_cpus=int(0.5 * 1e9),  # 用户建议：0.5 CPU
                 network_mode='none' if limits.network_disabled else 'bridge',
                 auto_remove=True
             )

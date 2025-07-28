@@ -30,19 +30,19 @@ class TaskConsumer:
         from app.memory.memory_manager import MemoryManager
         from app.llm.llm_router import LLMRouter
         
-        self.tool_registry = ToolRegistry(settings.tools_directory)
         self.memory_manager = MemoryManager()
-        self.llm_router = LLMRouter()
+        self.tool_registry = ToolRegistry(getattr(settings, 'tools_directory', '/app/tools.d'))
         self.execution_guard = ExecutionGuard(self.tool_registry)
+        self.llm_router = LLMRouter()
         self.llm_router_agent = LLMRouterAgent(self.llm_router)
         self.group_chat_manager = MandasGroupChatManager(
             self.tool_registry, self.execution_guard, self.memory_manager
         )
         
-        await self.tool_registry.initialize()
         await self.memory_manager.initialize()
-        await self.llm_router.initialize()
         await self.execution_guard.initialize()
+        await self.tool_registry.initialize()
+        await self.llm_router.initialize()
         await self.llm_router_agent.initialize()
         
         self.agent_manager = AgentManager()
@@ -174,60 +174,6 @@ class TaskConsumer:
                     .values(
                         status="FAILED",
                         result={"error": str(e)},
-
-    async def _pre_process_task(self, task_id: str, prompt: str, config: Dict[str, Any]):
-        try:
-            await self.memory_manager.remember(
-                task_id, 
-                {
-                    "role": "system",
-                    "content": f"Task {task_id} started: {prompt[:100]}...",
-                    "name": "TaskConsumer"
-                },
-                short_term=True
-            )
-            
-            logger.info(f"Pre-processed task {task_id}")
-            
-        except Exception as e:
-            logger.error(f"Error in pre-process for task {task_id}: {e}")
-    
-    async def _post_execute(self, task_id: str, result: Dict[str, Any]):
-        try:
-            await self.memory_manager.remember(
-                task_id,
-                {
-                    "role": "system", 
-                    "content": f"Task {task_id} completed with status: {result.get('status')}",
-                    "name": "TaskConsumer"
-                },
-                short_term=True,
-                long_term=True
-            )
-            
-            logger.info(f"Post-processed task {task_id}")
-            
-        except Exception as e:
-            logger.error(f"Error in post-execute for task {task_id}: {e}")
-    
-    async def _on_failure(self, task_id: str, error: str):
-        try:
-            await self.memory_manager.remember(
-                task_id,
-                {
-                    "role": "system",
-                    "content": f"Task {task_id} failed: {error}",
-                    "name": "TaskConsumer"
-                },
-                short_term=True,
-                long_term=True
-            )
-            
-            logger.error(f"Task {task_id} failure recorded")
-            
-        except Exception as e:
-            logger.error(f"Error in failure handler for task {task_id}: {e}")
-
                         updated_at=func.now()
                     )
                 )
@@ -264,6 +210,62 @@ class TaskConsumer:
     async def stop(self):
         self.running = False
         logger.info("Task Consumer stopped")
+
+    async def _pre_process_task(self, task_id: str, prompt: str, config: Dict[str, Any]):
+        """V0.6: Pre-process hook for task initialization"""
+        try:
+            await self.memory_manager.remember(
+                task_id, 
+                {
+                    "role": "system",
+                    "content": f"Task {task_id} started: {prompt[:100]}...",
+                    "name": "TaskConsumer"
+                },
+                short_term=True
+            )
+            
+            logger.info(f"Pre-processed task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in pre-process for task {task_id}: {e}")
+    
+    async def _post_execute(self, task_id: str, result: Dict[str, Any]):
+        """V0.6: Post-execute hook for result processing"""
+        try:
+            await self.memory_manager.remember(
+                task_id,
+                {
+                    "role": "system", 
+                    "content": f"Task {task_id} completed with status: {result.get('status')}",
+                    "name": "TaskConsumer"
+                },
+                short_term=True,
+                long_term=True
+            )
+            
+            logger.info(f"Post-processed task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in post-execute for task {task_id}: {e}")
+    
+    async def _on_failure(self, task_id: str, error: str):
+        """V0.6: On-failure hook for error handling"""
+        try:
+            await self.memory_manager.remember(
+                task_id,
+                {
+                    "role": "system",
+                    "content": f"Task {task_id} failed: {error}",
+                    "name": "TaskConsumer"
+                },
+                short_term=True,
+                long_term=True
+            )
+            
+            logger.error(f"Task {task_id} failure recorded")
+            
+        except Exception as e:
+            logger.error(f"Error in failure handler for task {task_id}: {e}")
 
 
 from sqlalchemy.sql import func

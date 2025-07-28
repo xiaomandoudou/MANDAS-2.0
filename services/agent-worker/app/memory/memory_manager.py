@@ -37,22 +37,24 @@ class ShortTermMemory(BaseMemory):
             score = time.time()
             value = json.dumps(message, ensure_ascii=False)
             
-            await self.redis_client.zadd(f"memory:short:{key}", {value: score})
+            redis_key = f"user:{key}:history" if not key.startswith("user:") else f"{key}:history"
             
-            if ttl:
-                await self.redis_client.expire(f"memory:short:{key}", ttl)
-            else:
-                await self.redis_client.expire(f"memory:short:{key}", self.default_ttl)
+            await self.redis_client.zadd(f"memory:short:{redis_key}", {value: score})
             
-            await self.redis_client.zremrangebyrank(f"memory:short:{key}", 0, -51)
+            ttl_seconds = ttl if ttl else 300  # 5分钟
+            await self.redis_client.expire(f"memory:short:{redis_key}", ttl_seconds)
+            
+            await self.redis_client.zremrangebyrank(f"memory:short:{redis_key}", 0, -51)
             
         except Exception as e:
             logger.error(f"Error adding message to short-term memory: {e}")
     
     async def get_history(self, key: str, limit: int = 10) -> List[Dict[str, Any]]:
         try:
+            redis_key = f"user:{key}:history" if not key.startswith("user:") else f"{key}:history"
+            
             messages = await self.redis_client.zrevrange(
-                f"memory:short:{key}", 0, limit - 1, withscores=False
+                f"memory:short:{redis_key}", 0, limit - 1, withscores=False
             )
             
             result = []
@@ -257,6 +259,10 @@ class MemoryManager:
     
     async def get_relevant_context(self, query: str, max_results: int = 3) -> str:
         return await self.get_context_for_llm(query, "general")
+    
+    async def get_context(self, user_id: str, task_id: str) -> str:
+        """用户建议的接口：自动拼接对话历史与知识检索内容"""
+        return await self.get_context_for_llm(f"user:{user_id}", task_id)
     
     def format_conversation(self, conversation: List[Dict[str, Any]]) -> str:
         formatted_parts = []

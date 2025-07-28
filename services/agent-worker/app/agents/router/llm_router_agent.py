@@ -12,26 +12,8 @@ class LLMRouterAgent:
     def __init__(self, llm_router: LLMRouter):
         self.llm_router = llm_router
         self.routing_model = "llama3:8b"  # 轻量级模型用于路由决策
-        self.model_metadata = {
-            "llama3:8b": {
-                "capabilities": ["general", "chat", "reasoning"],
-                "response_time": "fast",
-                "token_cost": "low",
-                "max_context": 4096
-            },
-            "qwen3:72b": {
-                "capabilities": ["coding", "analysis", "complex_reasoning"],
-                "response_time": "slow",
-                "token_cost": "high",
-                "max_context": 8192
-            },
-            "codellama:34b": {
-                "capabilities": ["coding", "debugging", "code_review"],
-                "response_time": "medium",
-                "token_cost": "medium",
-                "max_context": 16384
-            }
-        }
+        self.model_metadata = {}
+        self.model_metadata_file = "/app/configs/model_metadata.yaml"
     
     async def initialize(self):
         await self.llm_router.initialize()
@@ -108,11 +90,21 @@ class LLMRouterAgent:
 }}
 
 决策原则:
-1. 编程任务选择code模型
-2. 复杂分析选择大模型
-3. 简单对话选择轻量模型
+1. 编程任务选择code模型 (如codellama, qwen3)
+2. 复杂分析选择大模型 (如qwen3:72b)
+3. 简单对话选择轻量模型 (如llama3:8b)
 4. 需要执行代码时包含相关工具
 5. 涉及历史信息时启用记忆
+
+请返回JSON格式决策:
+{{
+    "model": "选择的模型名称",
+    "tools": ["需要的工具列表"],
+    "memory_required": true/false,
+    "reasoning": "选择理由",
+    "complexity": "low/medium/high",
+    "estimated_time": "预估执行时间(秒)"
+}}
 
 JSON决策:"""
         
