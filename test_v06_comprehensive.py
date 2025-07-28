@@ -67,13 +67,13 @@ def test_api_gateway():
     try:
         response = requests.get("http://localhost:8080/mandas/v1/health", timeout=5)
         if response.status_code == 200:
-            print("✅ API Gateway健康检查通过")
+            print("✅ API Gateway健康检查通过 - 新端点路径已更新")
             return True
         else:
             print(f"❌ API Gateway健康检查失败: {response.status_code}")
             return False
     except requests.exceptions.ConnectionError:
-        print("⚠️ API Gateway未运行")
+        print("⚠️ API Gateway未运行 - psycopg2依赖问题阻止启动")
         return False
     except Exception as e:
         print(f"❌ API Gateway检查异常: {e}")

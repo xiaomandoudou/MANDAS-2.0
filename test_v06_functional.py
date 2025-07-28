@@ -184,12 +184,12 @@ async def test_api_endpoints():
     try:
         response = requests.get(f"{base_url}/mandas/v1/health")
         if response.status_code == 200:
-            print("✅ 健康检查端点正常")
+            print("✅ 健康检查端点正常 - 新路径 /mandas/v1/health")
         else:
             print(f"❌ 健康检查失败: {response.status_code}")
             return False
     except requests.exceptions.ConnectionError:
-        print("⚠️ API Gateway未运行，跳过端点测试")
+        print("⚠️ API Gateway未运行，跳过端点测试 - 需要解决psycopg2依赖问题")
         return True
     
     v06_endpoints = [
