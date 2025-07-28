@@ -9,16 +9,17 @@ from loguru import logger
 router = APIRouter()
 
 
-@router.get("/")
+@router.get("/mandas/v1/health")
 async def health_check():
     return {
         "status": "healthy",
         "service": "mandas-api-gateway",
-        "version": "0.5.0"
+        "version": "0.6.0",
+        "mandas_version": "v0.6"
     }
 
 
-@router.get("/detailed")
+@router.get("/mandas/v1/health/detailed")
 async def detailed_health_check(
     db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis)
@@ -26,7 +27,8 @@ async def detailed_health_check(
     health_status = {
         "status": "healthy",
         "service": "mandas-api-gateway",
-        "version": "0.5.0",
+        "version": "0.6.0",
+        "mandas_version": "v0.6",
         "checks": {}
     }
     

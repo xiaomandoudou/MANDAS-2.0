@@ -57,7 +57,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         )
 
 
-app.include_router(health.router, prefix="/health", tags=["health"])
+app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(
     tasks.router, 

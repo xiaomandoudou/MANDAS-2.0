@@ -182,7 +182,7 @@ async def test_api_endpoints():
     base_url = "http://localhost:8080"
     
     try:
-        response = requests.get(f"{base_url}/health")
+        response = requests.get(f"{base_url}/mandas/v1/health")
         if response.status_code == 200:
             print("✅ 健康检查端点正常")
         else:

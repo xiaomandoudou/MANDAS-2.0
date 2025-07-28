@@ -59,6 +59,6 @@ dev-frontend: ## Start Frontend in development mode
 
 health: ## Check health of all services
 	@echo "Checking service health..."
-	curl -f http://localhost:8080/health || echo "API Gateway: DOWN"
+	curl -f http://localhost:8080/mandas/v1/health || echo "API Gateway: DOWN"
 	curl -f http://localhost:3000 || echo "Frontend: DOWN"
 	docker-compose ps
