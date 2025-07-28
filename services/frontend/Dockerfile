@@ -20,5 +20,5 @@ RUN npm run build
 # Expose port
 EXPOSE 3000
 
-# Serve the application
-CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "3000"]
+# Serve the application with disabled host check
+CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "3000", "--strictPort"]
