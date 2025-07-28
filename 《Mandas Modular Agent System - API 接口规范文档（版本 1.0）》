@@ -1,0 +1,167 @@
+Mandas Modular Agent System - API接口规范文档
+版本: 1.0
+基础路径 (Base URL): /api/v1
+
+1. 概述
+本文档定义了 Manus 系统前后端及内部服务之间的RESTful API和WebSocket通信协议。所有API都应遵循标准的HTTP状态码，并返回JSON格式的数据。
+
+2. 认证 (Authentication)
+所有需要授权的API端点都将通过Authorization请求头中的 JWT (JSON Web Token) 进行保护。
+
+流程:
+
+用户通过登录接口（本文档未详述）获取Token。
+
+在后续请求中，客户端需在HTTP Header中携带：Authorization: Bearer <your_jwt_token>。
+
+API Gateway负责验证Token的有效性。
+
+3. API 端点 (Endpoints)
+任务管理 (Task Management)
+POST /tasks
+功能: 提交一个新任务。
+
+描述: 这是一个异步接口。它会立即创建一个任务并将其放入队列，然后返回任务ID。
+
+请求体 (Request Body): application/json
+
+JSON
+
+{
+  "prompt": "帮我分析上个月的销售数据，并生成一份PPT大纲。",
+  "config": {
+    "llm_choice": "auto", // or "qwen3-gguf" to force a model
+    "priority": 5 // 1-10
+  }
+}
+响应 (Response): 202 Accepted
+
+JSON
+
+{
+  "task_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "status": "QUEUED",
+  "message": "任务已成功提交，正在排队等待处理。",
+  "created_at": "2025-07-27T16:30:00Z"
+}
+GET /tasks/{task_id}
+功能: 获取指定任务的当前状态和结果。
+
+路径参数:
+
+task_id (string, required): 任务的唯一ID。
+
+响应 (Response): 200 OK
+
+JSON
+
+{
+  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "user_id": "user-123",
+  "status": "COMPLETED", // QUEUED, RUNNING, COMPLETED, FAILED
+  "prompt": "帮我分析上个月的销售数据，并生成一份PPT大纲。",
+  "plan": [
+    {"step": 1, "action": "retrieve_sales_data", "status": "COMPLETED"},
+    {"step": 2, "action": "analyze_data_with_python", "status": "COMPLETED"},
+    {"step": 3, "action": "generate_ppt_outline", "status": "COMPLETED"}
+  ],
+  "result": {
+    "type": "markdown",
+    "content": "# 销售数据分析报告大纲..."
+  },
+  "created_at": "2025-07-27T16:30:00Z",
+  "updated_at": "2025-07-27T16:35:10Z"
+}
+GET /tasks
+功能: 获取当前用户的所有任务列表（支持分页）。
+
+查询参数:
+
+page (integer, optional, default: 1)
+
+limit (integer, optional, default: 20)
+
+status (string, optional): 按状态筛选。
+
+响应 (Response): 200 OK
+
+JSON
+
+{
+  "total": 150,
+  "page": 1,
+  "limit": 20,
+  "items": [
+    // ... 任务对象列表 (格式同上)
+  ]
+}
+知识库管理 (Knowledge Base Management)
+POST /documents
+功能: 上传一个文件到知识库。
+
+描述: 这是一个异步接口，文件将在后台被处理、切片和向量化。
+
+请求体 (Request Body): multipart/form-data
+
+file (file, required): 用户上传的文件 (PDF, MD, TXT等)。
+
+metadata (json-string, optional): {"source": "manual_upload", "tags": ["sales", "2025"]}
+
+响应 (Response): 202 Accepted
+
+JSON
+
+{
+  "document_id": "doc-abc-123",
+  "file_name": "Q2_Sales_Report.pdf",
+  "status": "PROCESSING",
+  "message": "文件已上传，正在后台处理中。"
+}
+实时通信 (Real-time Communication)
+WS /ws/tasks/{task_id}/stream
+功能: 通过WebSocket实时监听指定任务的日志和状态更新。
+
+协议: WebSocket
+
+流程:
+
+客户端与该地址建立WebSocket连接。
+
+连接成功后，服务器会开始推送该task_id相关的实时事件。
+
+服务器推送消息格式 (Server -> Client):
+
+状态更新:
+
+JSON
+
+{
+  "type": "status_update",
+  "payload": {
+    "status": "RUNNING",
+    "timestamp": "2025-07-27T16:31:00Z"
+  }
+}
+日志流:
+
+JSON
+
+{
+  "type": "log",
+  "payload": {
+    "level": "INFO",
+    "message": "正在调用工具：read_file(sales_data.csv)",
+    "timestamp": "2025-07-27T16:32:05Z"
+  }
+}
+任务完成:
+
+JSON
+
+{
+  "type": "task_end",
+  "payload": {
+    "status": "COMPLETED",
+    "result": { "...最终结果..." }
+  }
+}
