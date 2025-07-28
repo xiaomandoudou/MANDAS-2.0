@@ -8,6 +8,7 @@ from datetime import datetime
 
 from app.core.database import get_db, Task
 from app.core.redis_client import publish_task_to_queue
+from app.core.auth import get_current_user
 from loguru import logger
 
 router = APIRouter()
@@ -39,7 +40,7 @@ class TaskListResponse(BaseModel):
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
 async def create_task(
     task_data: TaskCreate,
-    current_user: dict = Depends(),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     task_id = uuid.uuid4()
@@ -77,7 +78,7 @@ async def create_task(
 @router.get("/{task_id}")
 async def get_task(
     task_id: str,
-    current_user: dict = Depends(),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     try:
@@ -123,7 +124,7 @@ async def list_tasks(
     page: int = 1,
     limit: int = 20,
     status_filter: Optional[str] = None,
-    current_user: dict = Depends(),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     offset = (page - 1) * limit

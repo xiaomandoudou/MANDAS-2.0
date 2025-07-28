@@ -65,7 +65,7 @@ class KnowledgeBaseDocs(Base):
     file_size = Column(Integer)
     mime_type = Column(String(100))
     status = Column(String(50), default="PROCESSING")
-    metadata = Column(JSONB, default={})
+    meta_data = Column(JSONB, default={})
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -81,7 +81,7 @@ class LLMModels(Base):
     max_tokens = Column(Integer)
     cost_per_token = Column(String(20))
     is_active = Column(Boolean, default=True)
-    metadata = Column(JSONB, default={})
+    meta_data = Column(JSONB, default={})
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -93,7 +93,7 @@ class TaskLogs(Base):
     task_id = Column(UUID(as_uuid=True), nullable=False)
     level = Column(String(20), nullable=False)
     message = Column(Text, nullable=False)
-    metadata = Column(JSONB, default={})
+    meta_data = Column(JSONB, default={})
     trace_id = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

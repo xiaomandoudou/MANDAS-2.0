@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app.core.database import get_db, KnowledgeBaseDocs
 from app.core.config import settings
+from app.core.auth import get_current_user
 from loguru import logger
 
 router = APIRouter()
@@ -27,7 +28,7 @@ class DocumentResponse(BaseModel):
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile = File(...),
-    current_user: dict = Depends(),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     if file.size > settings.max_file_size:
@@ -87,7 +88,7 @@ async def upload_document(
 
 @router.get("/", response_model=List[DocumentResponse])
 async def list_documents(
-    current_user: dict = Depends(),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
@@ -113,7 +114,7 @@ async def list_documents(
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: str,
-    current_user: dict = Depends(),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     try:

@@ -1,4 +1,5 @@
 import sys
+import os
 from loguru import logger
 from app.core.config import settings
 
@@ -13,8 +14,11 @@ def setup_logging():
         colorize=True
     )
     
+    log_dir = os.path.join(os.getcwd(), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    
     logger.add(
-        "/app/logs/api-gateway.log",
+        os.path.join(log_dir, "api-gateway.log"),
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
         level=settings.log_level,
         rotation="100 MB",
@@ -23,7 +27,7 @@ def setup_logging():
     )
     
     logger.add(
-        "/app/logs/api-gateway-json.log",
+        os.path.join(log_dir, "api-gateway-json.log"),
         format=lambda record: f'{{"timestamp": "{record["time"]}", "level": "{record["level"].name}", "module": "{record["name"]}", "function": "{record["function"]}", "line": {record["line"]}, "message": "{record["message"]}"}}',
         level=settings.log_level,
         rotation="100 MB",
