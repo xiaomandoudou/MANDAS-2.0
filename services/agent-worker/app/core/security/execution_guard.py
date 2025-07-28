@@ -183,7 +183,11 @@ class ExecutionGuard:
             container_id = await self.docker_sandbox.create_container(task_id, limits)
             
             if tool_name == "python_executor":
-                command = f"python -c \"{parameters.get('code', '')}\""
+                code = parameters.get('code', '')
+                if code.strip():
+                    command = f"cat > /tmp/code.py << 'EOF'\n{code}\nEOF\npython /tmp/code.py"
+                else:
+                    command = "python -c \"print('No code provided')\""
             elif tool_name == "shell_executor":
                 command = parameters.get("command", "")
             else:
