@@ -1,0 +1,112 @@
+Mandas Modular Agent System - 系统架构设计文档 (SAD)
+1. 文档概述
+本文档旨在详细阐述 Manus 智能体系统的内部架构设计、模块职责、数据流和核心技术实现，作为PRD文档的技术性补充，用于指导后续的开发、测试和运维工作。
+
+2. 总体架构与数据流
+系统采用分层、模块化的微服务思想构建，确保高内聚、低耦合，核心数据流遵循异步任务处理模式。
+
+2.1 架构图
+代码段
+
+graph TD
+    subgraph "用户与接入层"
+        U(用户) --> UI(面孔: Open WebUI)
+        UI -- HTTP/WebSocket --> API(API Gateway)
+    end
+
+    subgraph "任务调度与持久化层 (系统的脊椎)"
+        API -- "1. 创建任务 (HTTP)" --> DB[(PostgreSQL<br>数据库)]
+        API -- "2. 推送任务ID (HTTP)" --> MQ([Redis Stream<br>消息队列])
+        Worker(Agent Worker<br>消费者) -- "3. 拉取任务 (POP)" --> MQ
+        Worker -- "5. 更新状态/结果 (CRUD)" --> DB
+        API -- "6. 查询状态 (HTTP)" --> DB
+    end
+    
+    subgraph "智能决策与执行层"
+        subgraph "Agent Worker (AutoGen)"
+            Worker --> Router(挑选器: LLMRouter)
+            Router --> LLM(大脑: Qwen3/Ollama)
+            Worker --> Planner(规划/推理)
+            Planner --> LLM
+            Planner -- "调用工具" --> Tools(手脚: OpenInterpreter等)
+            Planner -- "访问记忆" --> Memory(记忆: ChromaDB)
+        end
+    end
+
+    style Worker fill:#f9f,stroke:#333,stroke-width:2px
+2.2 核心数据流 (异步任务生命周期)
+任务提交: 用户在Open WebUI上输入指令，前端通过HTTP POST请求将任务发送到API Gateway。
+
+任务注册: API Gateway接收请求，立即在PostgreSQL数据库的tasks表中创建一条新记录，状态为QUEUED，并生成一个唯一的task_id。
+
+任务入队: API Gateway将task_id推送到Redis Stream的任务队列中。
+
+即时反馈: API Gateway立即向UI返回task_id和QUEUED状态，UI进入等待和状态轮询/监听模式。
+
+任务执行: Agent Worker(一个或多个独立的消费者进程)从Redis队列中拉取task_id，从数据库中获取任务详情，开始执行。
+
+Worker将任务状态更新为RUNNING。
+
+通过LLMRouter选择合适的LLM。
+
+AutoGen框架开始进行规划、调用工具、访问记忆等操作。
+
+所有执行步骤的日志和中间结果都实时写回数据库。
+
+结果反馈: 任务完成后，Worker将最终结果和COMPLETED或FAILED状态写入数据库。UI通过轮询或WebSocket监听到状态变更，从API获取并展示最终结果。
+
+3. 模块详细设计
+3.1 脊椎：调度与状态中心
+3.1.1 PostgreSQL - 状态持久化
+负责存储所有需要持久化的数据。
+
+核心表 tasks 设计:
+| 列名 | 类型 | 描述 |
+| :--- | :--- | :--- |
+| id | UUID | 主键，任务唯一标识 (task_id) |
+| user_id | VARCHAR | 关联的用户ID |
+| status | VARCHAR | 任务状态 (QUEUED, RUNNING, COMPLETED, FAILED, RETRYING) |
+| prompt | TEXT | 用户原始输入 |
+| plan | JSONB | Agent生成的任务规划步骤 |
+| result | JSONB | 最终执行结果 |
+| logs | TEXT[] | 执行日志，或指向日志存储（如Elasticsearch）的引用 |
+| created_at | TIMESTAMPZ | 创建时间 |
+| updated_at | TIMESTAMPZ | 最后更新时间 |
+| retry_count | INTEGER | 重试次数 |
+
+其他表: users, tools_registry, knowledge_base_docs等。
+
+3.1.2 Redis Stream - 任务队列
+负责任务的异步解耦和削峰填谷。
+
+队列名称: 例如 manus:tasks:queue
+
+消息格式: {"task_id": "...", "priority": 5}
+
+3.2 挑选器：LLMRouter
+职责: 作为流量入口，根据预设规则或智能判断，将请求分发给最合适的LLM。
+
+实现: 接收prompt后，调用一个轻量级LLM（如Ollama中的Llama3-8B）进行意图分析和模型选择，输出决策JSON，网关根据该JSON将请求代理到对应的后端LLM服务。
+
+3.3 神经系统：Agent Framework (AutoGen)
+职责: 任务的核心执行单元，以Worker进程形式存在。
+
+实现:
+
+UserProxyAgent: 核心执行者，内置代码执行（调用Docker沙箱）、工具调用能力。
+
+GroupChatManager/AssistantAgent: 核心规划者，负责与LLM交互生成计划，分解任务，并将可执行步骤指令发送给UserProxyAgent。
+
+记忆集成: 所有Agent共享一个MemoryManager实例，该实例封装了对ChromaDB的查询（长期记忆）和对Redis的对话历史缓存（短期记忆）。
+
+3.4 手脚：Tools (OpenInterpreter & N8N)
+安全: OpenInterpreter的执行环境必须被严格限制在一次性的Docker容器内。通过docker-py库来动态管理容器的创建、执行和销毁。
+
+工具注册: 系统需要一个工具注册表（可在PostgreSQL中实现），描述每个工具的名称、功能、API端点（如果是外部服务如N8N）和所需权限。PlannerAgent会查询此表来发现可用工具。
+
+4. 可观测性设计
+结构化日志: 所有服务（API Gateway, Agent Workers等）都使用loguru等库输出JSON格式的日志。
+
+分布式追踪: 强制使用OpenTelemetry。API Gateway生成trace_id并将其通过消息队列传递给Worker，确保端到端的链路追踪。
+
+监控与告警: 使用Prometheus收集关键指标（如任务队列长度、任务执行成功率、LLM调用延迟），并配置Grafana进行可视化和Alertmanager进行告警。
