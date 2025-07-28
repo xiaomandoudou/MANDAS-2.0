@@ -1,0 +1,45 @@
+Mandas Modular Agent System - V0.5 项目计划
+1. 版本目标
+V0.5: 核心调度基座 (Core Scheduling Foundation)
+
+本次迭代的核心目标是构建起整个系统的“骨架”，即一个健壮、异步、安全、可观测的任务调度与执行中心。这个版本将不追求复杂的AI智能，而是专注于验证核心架构的稳定性和可行性，为后续智能模块的集成打下坚实的基础。
+
+成功标准:
+
+成功搭建并联通API Gateway -> Redis -> PostgreSQL -> Agent Worker的异步任务链路。
+
+成功实现一个简单的工具（如echo "hello world"）在Docker沙箱中的隔离执行。
+
+所有模块具备基础的结构化日志和端到端链路追踪能力。
+
+2. 时间规划
+总周期: 4周
+
+3. 任务分解 (Task Breakdown)
+第一周: 环境搭建与数据库设计
+任务编号	任务名称	负责人	预估工时	依赖	状态
+T1.1	基础设施搭建	Ops	2天	-	TO DO
+T1.2	PostgreSQL Schema设计与实现	Backend	2天	-	TO DO
+T1.3	Redis Stream队列与消息格式定义	Backend	1天	-	TO DO
+
+导出到 Google 表格
+第二周: 核心调度服务开发
+任务编号	任务名称	负责人	预估工时	依赖	状态
+T2.1	API Gateway: 任务提交与状态查询接口开发	Backend	3天	T1.2, T1.3	TO DO
+T2.2	Agent Worker: 基础框架搭建与任务消费逻辑	Backend	2天	T1.3	TO DO
+T2.3	实现任务状态在DB中的流转更新	Backend	2天	T1.2, T2.2	TO DO
+
+导出到 Google 表格
+第三周: 安全执行与可观测性
+任务编号	任务名称	负责人	预估工时	依赖	状态
+T3.1	Docker沙箱工具执行器开发	Backend	3天	T2.2	TO DO
+T3.2	注册并调用一个简单的echo工具	Backend	1天	T3.1	TO DO
+T3.3	集成OpenTelemetry实现链路追踪	Backend	2天	T2.1, T2.2	TO DO
+T3.4	统一结构化日志格式	All	1天	-	TO DO
+
+导出到 Google 表格
+第四周: 前端对接与端到端测试
+任务编号	任务名称	负责人	预估工时	依赖	状态
+T4.1	前端UI: 任务提交与状态轮询页面开发	Frontend	3天	T2.1	TO DO
+T4.2	端到端流程测试	QA/All	2天	T4.1, T3.2	TO DO
+T4.3	V0.5版本文档整理与发布	All	1天	T4.2	TO DO
