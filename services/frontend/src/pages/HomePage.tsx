@@ -21,7 +21,7 @@ export default function HomePage() {
 
   const createTaskMutation = useMutation({
     mutationFn: taskApi.create,
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
         title: '任务创建成功',
         description: '任务已提交，正在处理中...',

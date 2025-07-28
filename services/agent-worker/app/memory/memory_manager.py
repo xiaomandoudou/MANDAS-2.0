@@ -184,6 +184,7 @@ class MemoryManager:
         self._cache_ttl = 60
     
     async def initialize(self):
+        """Initialize memory manager with Redis and ChromaDB connections"""
         try:
             self.redis_client = redis.from_url(settings.redis_url)
             
@@ -209,6 +210,29 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Failed to initialize Enhanced Memory Manager: {e}")
             raise
+    
+    async def _acquire_lock(self, lock_key: str, timeout: int = 5) -> bool:
+        """Acquire distributed lock using Redis SETNX"""
+        try:
+            import time
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if await self.redis_client.set(lock_key, "locked", nx=True, ex=5):
+                    return True
+                await asyncio.sleep(0.1)
+            return False
+        except Exception as e:
+            logger.error(f"Failed to acquire lock {lock_key}: {e}")
+            return False
+    
+    async def _release_lock(self, lock_key: str) -> bool:
+        """Release distributed lock"""
+        try:
+            await self.redis_client.delete(lock_key)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to release lock {lock_key}: {e}")
+            return False
     
     async def acquire_lock(self, lock_key: str, timeout: int = 5) -> bool:
         """获取Redis分布式锁"""

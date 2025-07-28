@@ -14,8 +14,8 @@ export default function TaskDetailPage() {
     queryKey: ['task', taskId],
     queryFn: () => taskApi.get(taskId!),
     enabled: !!taskId,
-    refetchInterval: (data) => {
-      const status = data?.data?.status
+    refetchInterval: (query) => {
+      const status = query?.state?.data?.data?.status
       return status === 'RUNNING' || status === 'QUEUED' ? 2000 : false
     },
   })

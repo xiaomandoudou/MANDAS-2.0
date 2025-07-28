@@ -61,7 +61,7 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      test: ["CMD", "/bin/ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -121,7 +121,7 @@ services:
       chromadb:
         condition: service_started
       ollama:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./services/agent-worker/tools.d:/app/tools.d:ro
