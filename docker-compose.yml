@@ -109,6 +109,11 @@ services:
       - CHROMADB_URL=http://chromadb:8000
       - OLLAMA_URL=http://ollama:11434
       - LOG_LEVEL=INFO
+      - TOOLS_DIRECTORY=/app/tools.d
+      - MAX_AGENT_ROUNDS=20
+      - SHORT_TERM_MEMORY_TTL=3600
+      - MAX_CONTAINER_MEMORY=1g
+      - CONTAINER_TIMEOUT=600
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +125,7 @@ services:
         condition: service_healthy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/agent-worker/tools.d:/app/tools.d:ro
       - ./logs:/app/logs
     privileged: true
 

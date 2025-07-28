@@ -11,7 +11,7 @@ from app.core.database import init_db
 from app.core.redis_client import init_redis
 from app.core.logging import setup_logging
 from app.core.tracing import setup_tracing
-from app.api.v1 import tasks, documents, auth, health
+from app.api.v1 import tasks, documents, auth, health, tools, memory
 from app.core.auth import verify_token
 
 
@@ -69,6 +69,18 @@ app.include_router(
     documents.router, 
     prefix="/api/v1/documents", 
     tags=["documents"],
+    dependencies=[Depends(get_current_user)]
+)
+app.include_router(
+    tools.router,
+    prefix="/api/v1/tools",
+    tags=["tools"],
+    dependencies=[Depends(get_current_user)]
+)
+app.include_router(
+    memory.router,
+    prefix="/api/v1/memory", 
+    tags=["memory"],
     dependencies=[Depends(get_current_user)]
 )
 

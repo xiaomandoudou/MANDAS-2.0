@@ -22,13 +22,35 @@ class TaskConsumer:
 
     async def initialize(self):
         self.redis_client = await get_redis()
+        
+        from app.core.tools.tool_registry import ToolRegistry
+        from app.core.security.execution_guard import ExecutionGuard
+        from app.agents.router.llm_router_agent import LLMRouterAgent
+        from app.agents.manager.group_chat_manager import MandasGroupChatManager
+        from app.memory.memory_manager import MemoryManager
+        from app.llm.llm_router import LLMRouter
+        
+        self.tool_registry = ToolRegistry(settings.tools_directory)
+        self.memory_manager = MemoryManager()
+        self.llm_router = LLMRouter()
+        self.execution_guard = ExecutionGuard(self.tool_registry)
+        self.llm_router_agent = LLMRouterAgent(self.llm_router)
+        self.group_chat_manager = MandasGroupChatManager(
+            self.tool_registry, self.execution_guard, self.memory_manager
+        )
+        
+        await self.tool_registry.initialize()
+        await self.memory_manager.initialize()
+        await self.llm_router.initialize()
+        await self.execution_guard.initialize()
+        await self.llm_router_agent.initialize()
+        
         self.agent_manager = AgentManager()
         self.tool_executor = ToolExecutor()
-        
         await self.agent_manager.initialize()
         await self.tool_executor.initialize()
         
-        logger.info("Task Consumer initialized successfully")
+        logger.info("Task Consumer with V0.6 modules initialized successfully")
 
     async def start_consuming(self):
         self.running = True
@@ -94,11 +116,26 @@ class TaskConsumer:
             )
             await db.commit()
             
-            result = await self.agent_manager.process_task(
-                task_id=task_id,
-                prompt=task.prompt,
-                config=task.config or {}
+            await self._pre_process_task(task_id, task.prompt, task.config or {})
+            
+            available_tools = [tool.name for tool in self.tool_registry.list_tools()]
+            routing_decision = await self.llm_router_agent.decide(
+                task.prompt, available_tools, {"task_id": task_id}
             )
+            
+            logger.info(f"Routing decision for task {task_id}: {routing_decision}")
+            
+            if routing_decision.get("complexity") == "high" or len(available_tools) > 0:
+                result = await self.group_chat_manager.process_task(task_id, task.prompt, task.config or {})
+            else:
+                # 降级到原有AgentManager
+                result = await self.agent_manager.process_task(
+                    task_id=task_id,
+                    prompt=task.prompt,
+                    config=task.config or {}
+                )
+            
+            await self._post_execute(task_id, result)
             
             await db.execute(
                 update(Task)
@@ -115,6 +152,8 @@ class TaskConsumer:
             
         except Exception as e:
             logger.error(f"Task {task_id} execution failed: {e}")
+            
+            await self._on_failure(task_id, str(e))
             
             retry_count = task.retry_count + 1
             if retry_count < settings.max_retry_count:
@@ -135,6 +174,60 @@ class TaskConsumer:
                     .values(
                         status="FAILED",
                         result={"error": str(e)},
+
+    async def _pre_process_task(self, task_id: str, prompt: str, config: Dict[str, Any]):
+        try:
+            await self.memory_manager.remember(
+                task_id, 
+                {
+                    "role": "system",
+                    "content": f"Task {task_id} started: {prompt[:100]}...",
+                    "name": "TaskConsumer"
+                },
+                short_term=True
+            )
+            
+            logger.info(f"Pre-processed task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in pre-process for task {task_id}: {e}")
+    
+    async def _post_execute(self, task_id: str, result: Dict[str, Any]):
+        try:
+            await self.memory_manager.remember(
+                task_id,
+                {
+                    "role": "system", 
+                    "content": f"Task {task_id} completed with status: {result.get('status')}",
+                    "name": "TaskConsumer"
+                },
+                short_term=True,
+                long_term=True
+            )
+            
+            logger.info(f"Post-processed task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in post-execute for task {task_id}: {e}")
+    
+    async def _on_failure(self, task_id: str, error: str):
+        try:
+            await self.memory_manager.remember(
+                task_id,
+                {
+                    "role": "system",
+                    "content": f"Task {task_id} failed: {error}",
+                    "name": "TaskConsumer"
+                },
+                short_term=True,
+                long_term=True
+            )
+            
+            logger.error(f"Task {task_id} failure recorded")
+            
+        except Exception as e:
+            logger.error(f"Error in failure handler for task {task_id}: {e}")
+
                         updated_at=func.now()
                     )
                 )

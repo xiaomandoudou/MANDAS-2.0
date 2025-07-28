@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 from loguru import logger
 from app.core.config import settings
 
@@ -28,7 +29,18 @@ def setup_logging():
     
     logger.add(
         os.path.join(log_dir, "api-gateway-json.log"),
-        format=lambda record: f'{{"timestamp": "{record["time"]}", "level": "{record["level"].name}", "module": "{record["name"]}", "function": "{record["function"]}", "line": {record["line"]}, "message": "{record["message"]}"}}',
+        format=lambda record: json.dumps({
+            "timestamp": record["time"].isoformat(),
+            "level": record["level"].name,
+            "module": record["name"],
+            "function": record["function"],
+            "line": record["line"],
+            "message": record["message"],
+            "trace_id": record["extra"].get("trace_id", ""),
+            "request_id": record["extra"].get("request_id", ""),
+            "user_id": record["extra"].get("user_id", ""),
+            "span_id": record["extra"].get("span_id", "")
+        }),
         level=settings.log_level,
         rotation="100 MB",
         retention="30 days",

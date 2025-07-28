@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     
     max_task_timeout: int = 3600  # 1 hour
     max_retry_count: int = 3
+    max_agent_rounds: int = 20  # V0.6: GroupChat最大轮数
+    
+    tools_directory: str = "/app/tools.d"
+    
+    max_container_memory: str = "1g"
+    max_container_cpu: float = 0.5
+    container_timeout: int = 600
+    
+    short_term_memory_ttl: int = 3600  # 1小时
+    max_short_term_messages: int = 50
     
     class Config:
         env_file = ".env"
