@@ -1,0 +1,411 @@
+Manus Modular Agent System 最终可落地版 PRD 文档
+
+一、产品概述
+
+1.1 目标
+
+构建一套 100%本地化可部署的通用智能体系统，支持处理复杂任务、多Agent协同、添加专用工具、记忆恢复和用户交互。系统基于模块化设计，可接入多样化的 LLM 引擎，自动转发任务给最适合模型执行，成为真正可扩展、可调度、可成长的 AgentOS 框架应用基础。
+
+二、总体架构
+
+2.1 模块分层
+
+分层
+
+名称
+
+功能描述
+
+技术栏
+
+大脑
+
+LLM 引擎
+
+提供思考/计划/生成能力
+
+Qwen3 + Ollama
+
+神经系统
+
+Agent Framework
+
+协同Agent任务、连接模型/记忆/工具
+
+AutoGen / CrewAI
+
+记忆
+
+Vector Memory
+
+长期知识存储，培养 RAG
+
+ChromaDB / LanceDB
+
+手脚
+
+Tools
+
+执行实际操作，与环境互动
+
+OpenInterpreter + N8N
+
+面孔
+
+UI
+
+用户输入/输出界面
+
+Open WebUI
+
+挑选器
+
+LLMRouter
+
+智能分发任务给合适模型
+
+llama.cpp + API Gateway
+
+脊椎
+
+调度与状态中心
+
+提供任务异步执行、状态持久化、任务恢复能力
+
+Redis Stream + PostgreSQL
+
+分层
+
+名称
+
+功能描述
+
+技术栏
+
+大脑
+
+LLM 引擎
+
+提供思考/计划/生成能力
+
+Qwen3 + Ollama
+
+神经系统
+
+Agent Framework
+
+协同Agent任务、连接模型/记忆/工具
+
+AutoGen / CrewAI
+
+记忆
+
+Vector Memory
+
+长期知识存储，培养 RAG
+
+ChromaDB / LanceDB
+
+手脚
+
+Tools
+
+执行实际操作，与环境互动
+
+OpenInterpreter + N8N
+
+面孔
+
+UI
+
+用户输入/输出界面
+
+Open WebUI
+
+挑选器
+
+LLMRouter
+
+智能分发任务给合适模型
+
+llama.cpp + API Gateway
+
+三、核心需求
+
+3.1 功能列表
+
+功能编号
+
+功能名称
+
+详细描述
+
+F-1
+
+多LLM接入
+
+支持Qwen3 GGUF本地模型 + Ollama 处理轻量任务
+
+F-2
+
+智能LLM路由
+
+根据 prompt内容/任务类型/性能需求分配到不同模型
+
+F-3
+
+多Agent协同
+
+支持 Planner + Executor + Reviewer 系统结构
+
+F-4
+
+本地执行工具
+
+通过 OpenInterpreter 执行 Shell/Python/JS 操作
+
+F-5
+
+文档RAG查询
+
+支持 PDF/文本/笔记类文件分片存入向量库
+
+F-6
+
+UI 交互
+
+通过 OpenWebUI 表示任务进度/分布/结果返回
+
+F-7
+
+自定义工具接入
+
+支持通过API/N8N定义工具接入后注册给Agent
+
+F-8
+
+异步任务调度与状态管理
+
+支持任务异步提交、状态持久化、失败重试、状态查询与日志记录，用于支撑生产级流程控制
+
+功能编号
+
+功能名称
+
+详细描述
+
+F-1
+
+多LLM接入
+
+支持Qwen3 GGUF本地模型 + Ollama 处理轻量任务
+
+F-2
+
+智能LLM路由
+
+根据 prompt内容/任务类型/性能需求分配到不同模型
+
+F-3
+
+多Agent协同
+
+支持 Planner + Executor + Reviewer 系统结构
+
+F-4
+
+本地执行工具
+
+通过 OpenInterpreter 执行 Shell/Python/JS 操作
+
+F-5
+
+文档RAG查询
+
+支持 PDF/文本/笔记类文件分片存入向量库
+
+F-6
+
+UI 交互
+
+通过 OpenWebUI 表示任务进度/分布/结果返回
+
+F-7
+
+自定义工具接入
+
+支持通过API/N8N定义工具接入后注册给Agent
+
+四、技术细节
+
+4.1 LLMRouter 集成
+
+建议将路由逻辑设计为一个独立的智能任务，由轻量 LLM（如 Llama3-8B）作为 RouterAgent 执行决策。
+
+实现方式：定义所有后端模型的元数据（如名称、擅长领域、Token 成本、响应延迟）为一个 JSON 列表。
+
+当接收到用户请求时，构造 Prompt：“请根据以下模型能力描述和用户任务，选择最适合处理该任务的模型，并返回 JSON 格式的推荐及理由。”
+
+RouterAgent 输出结构如：
+
+{
+  "model_choice": "qwen3-gguf",
+  "reason": "用户请求包含复杂的Python代码生成，Qwen3模型最擅长此领域。"
+}
+
+LLMRouter 根据结果调用对应模型，从而实现动态、可扩展、可解释的智能分发机制。
+
+4.2 Agent Framework 集成
+
+建议基于 AutoGen 框架采用以下映射模式：
+
+UserProxyAgent：代表用户的可执行体，具备调用代码执行工具（如 OpenInterpreter Docker 沙箱）的权限，承担原“ExecutorAgent”的职责。
+
+GroupChatManager：作为任务分发者和上下文协调者，代理 Planner 与 Reviewer 的逻辑，聚合对话历史并调度 UserProxyAgent 执行操作。
+
+MemoryAgent 功能应作为所有 Agent 共享可调用的 Memory 工具模块，而非独立 Agent，可通过注册 shared_tool 访问 ChromaDB 查询接口（如 retrieve_from_chroma(query)）。
+
+推荐协同工作流为：用户输入 → UserProxyAgent → GroupChatManager 组织任务 → 多个子Agent规划/评审 → UserProxyAgent 执行 → 汇总结果返回用户。 通过 AutoGen 定义三种 Agent ：
+
+PlannerAgent
+
+ExecutorAgent
+
+MemoryAgent
+
+4.3 Memory 文档RAG
+
+支持通过 LangChain + Chroma 构建长期知识库（RAG）系统，并建议补充短期上下文记忆机制。短期记忆可通过 Agent 框架内置的对话历史管理实现，确保在多轮任务中保留上下文。长期记忆用于构建知识语境，短期记忆保持任务连续性。推荐设计统一的Prompt注入模板，合并最近对话窗口与从知识库检索出的内容，共同提供决策上下文。 通过 LangChain + Chroma
+
+from langchain.document_loaders import PyPDFLoader
+from langchain.vectorstores import Chroma
+
+4.4 OpenInterpreter 接入
+
+推荐通过 Docker 沙箱进行每次代码执行，避免直接在主机运行潜在恶意命令。每个任务应启动独立容器，容器执行后自动销毁，确保主系统安全隔离。 通过 socket 或 subprocess 接口管理本地执行器。
+
+建议新增“工具注册中心”机制：统一管理所有可调用工具的名称、功能描述、输入输出格式、权限要求等元信息，支持动态发现与权限控制，提升工具系统的灵活性与可扩展性。
+
+五、使用场景
+
+场景
+
+描述
+
+文档摘要
+
+用户上传PDF，Agent 分片接入 RAG查询，结果在 UI 显示
+
+编程代码生成
+
+主功能由 Qwen3 负责，用于技术拟码/测试代码生成
+
+系统调度
+
+用户输入“应用A数据导出到应用B”，Planner 划分流程，Executor 调用 N8N执行
+
+多Agent协同分析
+
+同时解析多文件/数据流入所形成结论
+
+六、部署需求
+
+项目
+
+推荐
+
+操作系统
+
+Ubuntu 22.04 LTS / Windows 11 Pro
+
+CPU
+
+调度型 >= 16 核
+
+内存
+
+>= 64GB
+
+GPU
+
+RTX 3090/4090/5090 (24GB+)
+
+存储
+
+SSD >= 1TB
+
+安全机制
+
+强制使用 Docker 沙箱进行工具执行，工具调用需声明权限级别
+
+日志与可观测性
+
+启用结构化 JSON 日志；集成 OpenTelemetry 实现请求链路追踪、故障定位与性能分析
+
+七、产品迭代计划
+
+版本
+
+内容
+
+目标
+
+V0.5
+
+核心调度基座
+
+构建任务调度中心与安全沙箱，具备异步任务投递、状态管理和隔离执行能力，为后续智能层打好基础
+
+V1.0
+
+MVP 基本连通
+
+Qwen3 + Ollama + AutoGen + Chroma + WebUI
+
+V1.1
+
+扩展工具和 UI 分析视图
+
+AgentLog 查看 / DAG进度视图
+
+V1.2
+
+多模型线程同步执行
+
+分模型同时对多任务执行
+
+V2.0
+
+添加 Agent API 定义接口
+
+所有 Agent 支持 HTTP 调用和外部添加
+
+版本
+
+内容
+
+目标
+
+V1.0
+
+MVP 基本连通
+
+Qwen3 + Ollama + AutoGen + Chroma + WebUI
+
+V1.1
+
+扩展工具和 UI 分析视图
+
+AgentLog 查看 / DAG进度视图
+
+V1.2
+
+多模型线程同步执行
+
+分模型同时对多任务执行
+
+V2.0
+
+添加 Agent API 定义接口
+
+所有 Agent 支持 HTTP 调用和外部添加
