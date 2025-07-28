@@ -4,7 +4,7 @@ from pydantic import field_validator
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://mandas:mandas123@localhost:5432/mandas"
+    database_url: str = "postgresql+psycopg://mandas:mandas123@localhost:5432/mandas"
     redis_url: str = "redis://localhost:6379"
     chromadb_url: str = "http://localhost:8000"
     ollama_url: str = "http://localhost:11434"

@@ -2,10 +2,18 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://mandas:mandas123@localhost:5432/mandas"
+    database_url: str = "postgresql+psycopg://mandas:mandas123@localhost:5432/mandas"
     redis_url: str = "redis://localhost:6379"
     chromadb_url: str = "http://localhost:8000"
     ollama_url: str = "http://localhost:11434"
+    
+    postgres_db: str = "mandas"
+    postgres_user: str = "mandas"
+    postgres_password: str = "mandas123"
+    
+    jwt_secret: str = "your-secret-key-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440
     
     log_level: str = "INFO"
     

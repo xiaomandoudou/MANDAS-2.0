@@ -65,7 +65,7 @@ def test_api_gateway():
     print("\n🌐 检查API Gateway状态...")
     
     try:
-        response = requests.get("http://localhost:8080/mandas/v1/health", timeout=5)
+        response = requests.get("http://localhost:8081/mandas/v1/health", timeout=5)
         if response.status_code == 200:
             print("✅ API Gateway健康检查通过 - 新端点路径已更新")
             return True

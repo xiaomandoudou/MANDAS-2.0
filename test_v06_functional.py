@@ -179,7 +179,7 @@ async def test_api_endpoints():
     """测试API端点"""
     print("🟡 测试API端点...")
     
-    base_url = "http://localhost:8080"
+    base_url = "http://localhost:8081"
     
     try:
         response = requests.get(f"{base_url}/mandas/v1/health")
