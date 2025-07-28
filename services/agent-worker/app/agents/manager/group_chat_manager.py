@@ -1,8 +1,8 @@
 import asyncio
 from typing import Dict, Any, List, Optional
 from loguru import logger
-import autogen
-from autogen import UserProxyAgent, AssistantAgent, GroupChatManager, GroupChat
+from autogen_agentchat.agents import UserProxyAgent, AssistantAgent
+from autogen_agentchat.teams import RoundRobinGroupChat
 
 from app.core.config import settings
 from app.core.tools.tool_registry import ToolRegistry
@@ -153,16 +153,9 @@ class MandasGroupChatManager:
                 self.agents["reviewer"]
             ]
             
-            self.group_chat = GroupChat(
-                agents=agents_list,
-                messages=[],
-                max_round=settings.max_agent_rounds,
-                speaker_selection_method="round_robin"
-            )
-            
-            self.manager = GroupChatManager(
-                groupchat=self.group_chat,
-                llm_config=llm_config
+            self.group_chat = RoundRobinGroupChat(
+                participants=agents_list,
+                max_turns=settings.max_agent_rounds
             )
             
             logger.info("Group Chat Manager initialized successfully")
@@ -183,9 +176,8 @@ class MandasGroupChatManager:
             self.group_chat.messages = []
             
             result = await asyncio.to_thread(
-                self.agents["user_proxy"].initiate_chat,
-                self.manager,
-                message=enhanced_prompt
+                self.group_chat.run,
+                task=enhanced_prompt
             )
             
             conversation_history = self._extract_conversation_history()

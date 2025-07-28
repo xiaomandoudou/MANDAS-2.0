@@ -34,13 +34,6 @@ class DockerSandbox:
     
     async def create_container(self, task_id: str, limits: ContainerLimits) -> str:
         try:
-            host_config = self.docker_client.api.create_host_config(
-                mem_limit=limits.memory,
-                nano_cpus=int(0.5 * 1e9),  # 用户建议：0.5 CPU
-                network_mode='none' if limits.network_disabled else 'bridge',
-                auto_remove=True
-            )
-            
             container = self.docker_client.containers.create(
                 image=settings.docker_image_python,
                 command="sleep infinity",
@@ -48,7 +41,10 @@ class DockerSandbox:
                 working_dir="/workspace",
                 volumes={"/tmp": {"bind": "/workspace", "mode": "rw"}},
                 detach=True,
-                host_config=host_config
+                mem_limit=limits.memory,
+                nano_cpus=int(0.5 * 1e9),
+                network_mode='none' if limits.network_disabled else 'bridge',
+                auto_remove=True
             )
             
             container.start()
@@ -66,16 +62,22 @@ class DockerSandbox:
             raise ValueError(f"No container found for task {task_id}")
         
         try:
+            if command.startswith('python -c'):
+                shell_command = f'/bin/bash -c "{command}"'
+            else:
+                shell_command = f'/bin/bash -c "{command}"'
+            
             result = container.exec_run(
-                command,
+                shell_command,
                 stdout=True,
-                stderr=True,
-                timeout=timeout
+                stderr=True
             )
+            
+            stdout = result.output.decode('utf-8') if result.output else ""
             
             return {
                 "exit_code": result.exit_code,
-                "stdout": result.output.decode('utf-8') if result.output else "",
+                "stdout": stdout,
                 "stderr": ""
             }
             
@@ -191,7 +193,10 @@ class ExecutionGuard:
                 task_id, command, limits.timeout
             )
             
-            await self.docker_sandbox.cleanup_container(task_id)
+            try:
+                await self.docker_sandbox.cleanup_container(task_id)
+            except Exception as cleanup_error:
+                logger.warning(f"Container cleanup failed for task {task_id}: {cleanup_error}")
             
             return {
                 "success": result["exit_code"] == 0,
@@ -201,7 +206,10 @@ class ExecutionGuard:
             }
             
         except Exception as e:
-            await self.docker_sandbox.cleanup_container(task_id)
+            try:
+                await self.docker_sandbox.cleanup_container(task_id)
+            except Exception as cleanup_error:
+                logger.warning(f"Container cleanup failed for task {task_id}: {cleanup_error}")
             return {
                 "success": False,
                 "error": str(e),

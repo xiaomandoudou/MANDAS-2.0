@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+import random
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 import chromadb
@@ -31,23 +32,33 @@ class ShortTermMemory(BaseMemory):
     def __init__(self, redis_client):
         self.redis_client = redis_client
         self.default_ttl = 3600  # 1小时
+        self._locks = {}  # 为每个key维护锁
     
     async def add_message(self, key: str, message: Dict[str, Any], ttl: Optional[int] = None):
         try:
-            score = time.time()
-            value = json.dumps(message, ensure_ascii=False)
-            
             redis_key = f"user:{key}:history" if not key.startswith("user:") else f"{key}:history"
+            full_key = f"memory:short:{redis_key}"
             
-            await self.redis_client.zadd(f"memory:short:{redis_key}", {value: score})
+            if full_key not in self._locks:
+                self._locks[full_key] = asyncio.Lock()
             
-            ttl_seconds = ttl if ttl else 300  # 5分钟
-            await self.redis_client.expire(f"memory:short:{redis_key}", ttl_seconds)
-            
-            await self.redis_client.zremrangebyrank(f"memory:short:{redis_key}", 0, -51)
+            async with self._locks[full_key]:
+                async with self.redis_client.pipeline(transaction=True) as pipe:
+                    score = time.time() * 1000000000 + random.randint(0, 999999)
+                    value = json.dumps(message, ensure_ascii=False)
+                    
+                    pipe.zadd(full_key, {value: score})
+                    
+                    ttl_seconds = ttl if ttl else 300
+                    pipe.expire(full_key, ttl_seconds)
+                    
+                    pipe.zremrangebyrank(full_key, 0, -51)
+                    
+                    await pipe.execute()
             
         except Exception as e:
             logger.error(f"Error adding message to short-term memory: {e}")
+            raise
     
     async def get_history(self, key: str, limit: int = 10) -> List[Dict[str, Any]]:
         try:
@@ -169,6 +180,8 @@ class MemoryManager:
         self.embedding_model = None
         self.short_term_memory = None
         self.long_term_memory = None
+        self._context_cache = {}
+        self._cache_ttl = 60
     
     async def initialize(self):
         try:
@@ -197,32 +210,71 @@ class MemoryManager:
             logger.error(f"Failed to initialize Enhanced Memory Manager: {e}")
             raise
     
+    async def acquire_lock(self, lock_key: str, timeout: int = 5) -> bool:
+        """获取Redis分布式锁"""
+        try:
+            end_time = time.time() + timeout
+            while time.time() < end_time:
+                if await self.redis_client.set(lock_key, "locked", nx=True, ex=5):
+                    return True
+                await asyncio.sleep(0.1)
+            return False
+        except Exception as e:
+            logger.error(f"Error acquiring lock {lock_key}: {e}")
+            return False
+    
+    async def release_lock(self, lock_key: str):
+        """释放Redis分布式锁"""
+        try:
+            await self.redis_client.delete(lock_key)
+        except Exception as e:
+            logger.error(f"Error releasing lock {lock_key}: {e}")
+
     async def get_context_for_llm(self, query: str, task_id: str) -> str:
         try:
-            short_history = await self.short_term_memory.get_history(task_id, limit=5)
+            lock_key = f"lock:context:{task_id}"
+            if not await self.acquire_lock(lock_key):
+                logger.warning(f"Failed to acquire lock for context {task_id}")
+                return "系统繁忙，请稍后重试。"
             
-            knowledge = await self.long_term_memory.query_knowledge(query, limit=3)
-            
-            context_parts = []
-            
-            if short_history:
-                context_parts.append("**最近对话历史**:")
-                for msg in short_history:
-                    name = msg.get("name", "unknown")
-                    content = msg.get("content", "")[:200]
-                    context_parts.append(f"- {name}: {content}")
-            
-            if knowledge:
-                context_parts.append("\n**相关知识库内容**:")
-                for item in knowledge:
-                    source = item.get("source", "unknown")
-                    content = item.get("content", "")
-                    context_parts.append(f"- [{source}]: {content}")
-            
-            if not context_parts:
-                return "暂无相关历史记录和知识库内容。"
-            
-            return "\n".join(context_parts)
+            try:
+                cache_key = f"context:{task_id}:{hash(query)}"
+                cached_context = await self.redis_client.get(cache_key)
+                if cached_context:
+                    return json.loads(cached_context)
+                
+                short_history = await self.short_term_memory.get_history(task_id, limit=5)
+                await asyncio.sleep(0.01)  # 小延迟确保操作顺序
+                
+                knowledge = await self.long_term_memory.query_knowledge(query, limit=3)
+                
+                context_parts = []
+                
+                if short_history:
+                    context_parts.append("**最近对话历史**:")
+                    for msg in short_history:
+                        name = msg.get("name", "unknown")
+                        content = msg.get("content", "")[:200]
+                        context_parts.append(f"- {name}: {content}")
+                
+                if knowledge:
+                    context_parts.append("\n**相关知识库内容**:")
+                    for item in knowledge:
+                        source = item.get("source", "unknown")
+                        content = item.get("content", "")
+                        context_parts.append(f"- [{source}]: {content}")
+                
+                if not context_parts:
+                    result = "暂无相关历史记录和知识库内容。"
+                else:
+                    result = "\n".join(context_parts)
+                
+                await self.redis_client.set(cache_key, json.dumps(result), ex=self._cache_ttl)
+                
+                return result
+                
+            finally:
+                await self.release_lock(lock_key)
             
         except Exception as e:
             logger.error(f"Error getting context for LLM: {e}")
@@ -230,14 +282,19 @@ class MemoryManager:
     
     async def remember(self, task_id: str, message: Dict[str, Any], short_term: bool = True, long_term: bool = False, ttl: Optional[int] = None):
         try:
+            tasks = []
             if short_term:
-                await self.short_term_memory.add_message(task_id, message, ttl)
+                tasks.append(self.short_term_memory.add_message(task_id, message, ttl))
             
             if long_term:
-                await self.long_term_memory.add_message(task_id, message, ttl)
+                tasks.append(self.long_term_memory.add_message(task_id, message, ttl))
+            
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
                 
         except Exception as e:
             logger.error(f"Error in remember: {e}")
+            raise
     
     async def store_conversation(self, task_id: str, conversation: List[Dict[str, Any]]):
         try:
