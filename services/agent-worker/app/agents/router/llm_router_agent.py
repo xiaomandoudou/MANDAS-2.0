@@ -11,7 +11,7 @@ class LLMRouterAgent:
     
     def __init__(self, llm_router: LLMRouter):
         self.llm_router = llm_router
-        self.routing_model = "llama3:8b"  # 轻量级模型用于路由决策
+        self.routing_model = "phi3:mini"  # 轻量级模型用于路由决策
         self.model_metadata = {}
         self.model_metadata_file = "/app/configs/model_metadata.yaml"
     
@@ -112,24 +112,58 @@ JSON决策:"""
     
     def _parse_decision(self, response: str) -> Dict[str, Any]:
         try:
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
+            import re
             
-            if start_idx == -1 or end_idx == 0:
-                raise ValueError("No JSON found in response")
+            cleaned_response = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response)
             
-            json_str = response[start_idx:end_idx]
-            decision = json.loads(json_str)
+            json_patterns = [
+                r'\{[^{}]*"model"[^{}]*\}',  # Simple JSON pattern
+                r'\{.*?"model".*?\}',        # More flexible pattern
+            ]
             
-            required_fields = ["model", "tools", "memory_required"]
-            for field in required_fields:
-                if field not in decision:
-                    decision[field] = self._get_default_value(field)
+            decision = None
+            for pattern in json_patterns:
+                matches = re.findall(pattern, cleaned_response, re.DOTALL)
+                for match in matches:
+                    try:
+                        clean_match = re.sub(r'\s+', ' ', match.strip())
+                        clean_match = clean_match.replace('\n', ' ').replace('\r', ' ')
+                        
+                        decision = json.loads(clean_match)
+                        if "model" in decision:
+                            break
+                    except:
+                        continue
+                if decision and "model" in decision:
+                    break
             
-            return decision
+            if not decision:
+                model_match = re.search(r'"model":\s*"([^"]+)"', cleaned_response)
+                tools_match = re.search(r'"tools":\s*\[([^\]]*)\]', cleaned_response)
+                memory_match = re.search(r'"memory_required":\s*(true|false)', cleaned_response)
+                
+                if model_match:
+                    decision = {
+                        "model": model_match.group(1),
+                        "tools": [],
+                        "memory_required": memory_match.group(1) == "true" if memory_match else True,
+                        "reasoning": "Extracted from partial response",
+                        "complexity": "medium",
+                        "estimated_time": "60"
+                    }
+            
+            if decision:
+                required_fields = ["model", "tools", "memory_required"]
+                for field in required_fields:
+                    if field not in decision:
+                        decision[field] = self._get_default_value(field)
+                return decision
+            else:
+                raise ValueError("No valid JSON or extractable data found")
             
         except Exception as e:
             logger.error(f"Error parsing decision response: {e}")
+            logger.error(f"Raw response sample: {repr(response[:300])}")
             return self._get_fallback_decision([])
     
     def _validate_decision(self, decision: Dict[str, Any], available_tools: List[str]) -> Dict[str, Any]:
@@ -148,7 +182,7 @@ JSON决策:"""
     
     def _get_default_value(self, field: str) -> Any:
         defaults = {
-            "model": list(self.model_metadata.keys())[0] if self.model_metadata else "llama3:8b",
+            "model": list(self.model_metadata.keys())[0] if self.model_metadata else "phi3:mini",
             "tools": [],
             "memory_required": False,
             "reasoning": "Default routing decision",
@@ -159,7 +193,7 @@ JSON决策:"""
     
     def _get_fallback_decision(self, available_tools: List[str]) -> Dict[str, Any]:
         return {
-            "model": list(self.model_metadata.keys())[0] if self.model_metadata else "llama3:8b",
+            "model": list(self.model_metadata.keys())[0] if self.model_metadata else "phi3:mini",
             "tools": available_tools[:3] if available_tools else [],
             "memory_required": True,
             "reasoning": "Fallback decision due to parsing error",
