@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": "/home/ubuntu/repos/MANDAS-2.0/services/frontend/src",
+      '@': '/src',
     },
   },
   server: {
