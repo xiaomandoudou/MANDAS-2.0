@@ -207,7 +207,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest requests websocket-client psycopg docker-compose
+        pip install pytest requests websocket-client psycopg-binary
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
     
@@ -225,7 +225,7 @@ jobs:
       run: |
         # 如果有docker-compose文件，启动服务
         if [ -f docker-compose.yml ]; then
-          docker-compose up -d || true
+          docker compose up -d || true
           sleep 30
         fi
     
@@ -238,7 +238,7 @@ jobs:
     - name: Cleanup
       run: |
         if [ -f docker-compose.yml ]; then
-          docker-compose down || true
+          docker compose down || true
         fi
 
   # 部署准备
