@@ -6,7 +6,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.redis_client import init_redis
-from app.core.logging import setup_logging
+from app.core.logging.enhanced_logger import setup_logging
 from app.core.tracing import setup_tracing
 from app.worker.task_consumer import TaskConsumer
 

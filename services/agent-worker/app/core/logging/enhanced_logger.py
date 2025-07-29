@@ -5,6 +5,15 @@ from typing import Dict, Any, Optional
 from loguru import logger
 from contextlib import contextmanager
 
+def setup_logging():
+    """Setup enhanced logging configuration"""
+    logger.remove()
+    logger.add(
+        sink=lambda message: print(message, end=""),
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        level="INFO"
+    )
+
 
 class EnhancedLogger:
     """Enhanced logger with trace_id support and structured logging"""

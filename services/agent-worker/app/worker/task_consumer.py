@@ -68,7 +68,7 @@ class TaskConsumer:
         self.llm_router = LLMRouter()
         self.llm_router_agent = LLMRouterAgent(self.llm_router)
         self.group_chat_manager = MandasGroupChatManager(
-            self.tool_registry, self.execution_guard, self.memory_manager
+            self.tool_registry, self.execution_guard, self.memory_manager, self.llm_router
         )
         
         self.default_agent = DefaultAgent(
@@ -169,8 +169,9 @@ class TaskConsumer:
                 self.logger.info(f"Routing decision for task {task_id}: {routing_decision}")
                 
                 if routing_decision.get("complexity") == "high" or len(available_tools) > 5:
+                    user_context = {"task_id": task_id, "trace_id": trace_id}
                     result = await self.group_chat_manager.process_task(
-                        task_id, task.prompt, task.config or {}
+                        task_id, task.prompt, task.config or {}, user_context
                     )
                 else:
                     result = await self.default_agent.process_task(

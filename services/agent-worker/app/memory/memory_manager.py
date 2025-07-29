@@ -188,28 +188,55 @@ class MemoryManager:
         try:
             self.redis_client = redis.from_url(settings.redis_url)
             
-            self.chroma_client = chromadb.HttpClient(
-                host=settings.chromadb_url.replace("http://", "").split(":")[0],
-                port=int(settings.chromadb_url.split(":")[-1])
-            )
+            try:
+                self.chroma_client = chromadb.HttpClient(
+                    host=settings.chromadb_url.replace("http://", "").split(":")[0],
+                    port=int(settings.chromadb_url.split(":")[-1])
+                )
+                
+                self.collection = self.chroma_client.get_or_create_collection(
+                    name="mandas_memory",
+                    metadata={"description": "Mandas Agent System Memory Store"}
+                )
+                logger.info("ChromaDB connection established successfully")
+                
+            except Exception as e:
+                logger.warning(f"ChromaDB initialization failed: {e}, using Redis-only memory mode")
+                self.chroma_client = None
+                self.collection = None
             
-            self.collection = self.chroma_client.get_or_create_collection(
-                name="mandas_memory",
-                metadata={"description": "Mandas Agent System Memory Store"}
-            )
-            
-            self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            if self.collection is not None:
+                try:
+                    self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                except Exception as e:
+                    logger.warning(f"Embedding model initialization failed: {e}, disabling long-term memory")
+                    self.collection = None
+                    self.embedding_model = None
+            else:
+                self.embedding_model = None
             
             self.short_term_memory = ShortTermMemory(self.redis_client)
-            self.long_term_memory = LongTermMemory(
-                self.chroma_client, self.collection, self.embedding_model
-            )
+            
+            if self.collection is not None and self.embedding_model is not None:
+                self.long_term_memory = LongTermMemory(
+                    self.chroma_client, self.collection, self.embedding_model
+                )
+                logger.info("Long-term memory (ChromaDB) enabled")
+            else:
+                logger.warning("Long-term memory disabled, using Redis-only memory mode")
+                self.long_term_memory = None
             
             logger.info("Enhanced Memory Manager initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize Enhanced Memory Manager: {e}")
-            raise
+            logger.warning("Continuing with minimal memory functionality")
+            self.redis_client = None
+            self.chroma_client = None
+            self.collection = None
+            self.embedding_model = None
+            self.short_term_memory = None
+            self.long_term_memory = None
     
     async def _acquire_lock(self, lock_key: str, timeout: int = 5) -> bool:
         """Acquire distributed lock using Redis SETNX"""
@@ -270,7 +297,7 @@ class MemoryManager:
                 short_history = await self.short_term_memory.get_history(task_id, limit=5)
                 await asyncio.sleep(0.01)  # 小延迟确保操作顺序
                 
-                knowledge = await self.long_term_memory.query_knowledge(query, limit=3)
+                knowledge = await self.long_term_memory.query_knowledge(query, limit=3) if self.long_term_memory else []
                 
                 context_parts = []
                 
@@ -310,7 +337,7 @@ class MemoryManager:
             if short_term:
                 tasks.append(self.short_term_memory.add_message(task_id, message, ttl))
             
-            if long_term:
+            if long_term and self.long_term_memory:
                 tasks.append(self.long_term_memory.add_message(task_id, message, ttl))
             
             if tasks:
@@ -330,8 +357,9 @@ class MemoryManager:
                 if len(msg.get("content", "")) > 100 or msg.get("name") == "Reviewer"
             ]
             
-            for msg in important_messages:
-                await self.long_term_memory.add_message(task_id, msg)
+            if self.long_term_memory:
+                for msg in important_messages:
+                    await self.long_term_memory.add_message(task_id, msg)
             
             logger.info(f"Stored conversation for task {task_id}")
             

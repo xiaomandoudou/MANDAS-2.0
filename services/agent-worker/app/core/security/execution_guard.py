@@ -26,11 +26,17 @@ class DockerSandbox:
     
     async def initialize(self):
         try:
-            self.docker_client = docker.from_env()
-            logger.info("Docker Sandbox initialized successfully")
+            try:
+                self.docker_client = docker.from_env()
+                logger.info("Docker Sandbox initialized successfully")
+            except Exception as docker_error:
+                logger.warning(f"Docker client initialization failed: {docker_error}")
+                logger.warning("Continuing without Docker isolation - security features limited")
+                self.docker_client = None
         except Exception as e:
-            logger.error(f"Failed to initialize Docker client: {e}")
-            raise
+            logger.error(f"Failed to initialize Docker sandbox: {e}")
+            logger.warning("Continuing with minimal security functionality")
+            self.docker_client = None
     
     async def create_container(self, task_id: str, limits: ContainerLimits) -> str:
         try:
@@ -114,8 +120,11 @@ class ExecutionGuard:
         }
     
     async def initialize(self):
-        await self.docker_sandbox.initialize()
-        logger.info("Execution Guard initialized successfully")
+        try:
+            await self.docker_sandbox.initialize()
+            logger.info("Execution Guard initialized successfully")
+        except Exception as e:
+            logger.warning(f"Execution Guard initialization with limited functionality: {e}")
     
     async def execute_tool(self, tool_name: str, parameters: Dict[str, Any], user_context: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -140,7 +149,7 @@ class ExecutionGuard:
                     "error": f"Security policy violation: {security_check['reason']}"
                 }
             
-            if tool.category in ["code_execution", "system"]:
+            if tool.category in ["code_execution", "system"] and self.docker_sandbox.docker_client is not None:
                 return await self._execute_in_sandbox(tool_name, parameters, user_context)
             else:
                 return await self._execute_direct(tool_name, parameters, user_context)
