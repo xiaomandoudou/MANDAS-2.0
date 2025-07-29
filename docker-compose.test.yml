@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # PostgreSQL测试数据库
+  postgres-test:
+    image: postgres:15
+    container_name: mandas-postgres-test
+    environment:
+      POSTGRES_DB: mandas_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5433:5432"  # 使用不同端口避免冲突
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./tests/sql:/docker-entrypoint-initdb.d/  # 初始化SQL脚本
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mandas_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mandas-test-network
+
+  # Redis测试缓存
+  redis-test:
+    image: redis:7-alpine
+    container_name: mandas-redis-test
+    ports:
+      - "6380:6379"  # 使用不同端口避免冲突
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mandas-test-network
+
+  # 测试运行器
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: mandas-test-runner
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:test_password@postgres-test:5432/mandas_test
+      - REDIS_URL=redis://redis-test:6379
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_NAME=mandas_test
+      - DB_USER=postgres
+      - DB_PASSWORD=test_password
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock  # 用于Docker-in-Docker测试
+    working_dir: /app
+    command: >
+      sh -c "
+        echo 'Waiting for services to be ready...' &&
+        sleep 10 &&
+        echo 'Running tests...' &&
+        python -m pytest tests/ -v --tb=short --color=yes
+      "
+    networks:
+      - mandas-test-network
+
+volumes:
+  postgres_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+
+networks:
+  mandas-test-network:
+    driver: bridge
