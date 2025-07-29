@@ -1,0 +1,19 @@
+name: "echo"
+description: "简单的回显工具，用于测试和调试"
+category: "utility"
+version: "1.0.0"
+author: "MANDAS System"
+enabled: true
+timeout: 30
+rate_limit_per_min: 100
+required_permissions: []
+parameters:
+  type: "object"
+  properties:
+    text:
+      type: "string"
+      description: "要回显的文本内容"
+      maxLength: 1000
+  required:
+    - "text"
+  additionalProperties: false

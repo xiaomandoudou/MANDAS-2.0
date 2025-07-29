@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # 数据库服务
+  postgres:
+    image: postgres:15
+    container_name: mandas-postgres-dev
+    environment:
+      POSTGRES_DB: mandas
+      POSTGRES_USER: mandas
+      POSTGRES_PASSWORD: mandas123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # Redis 消息队列
+  redis:
+    image: redis:7-alpine
+    container_name: mandas-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+
+  # ChromaDB 向量数据库
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: mandas-chromadb-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_dev_data:/chroma/chroma
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+
+  # Ollama LLM 服务
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mandas-ollama-dev
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_dev_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  chroma_dev_data:
+  ollama_dev_data:
+
+networks:
+  default:
+    name: mandas-dev-network

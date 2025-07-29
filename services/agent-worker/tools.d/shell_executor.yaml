@@ -1,0 +1,19 @@
+name: "shell_executor"
+description: "在安全沙箱中执行Shell命令"
+category: "system"
+version: "1.0.0"
+author: "MANDAS System"
+enabled: true
+timeout: 180
+rate_limit_per_min: 5
+required_permissions: ["system_access", "shell_execution"]
+parameters:
+  type: "object"
+  properties:
+    command:
+      type: "string"
+      description: "要执行的Shell命令"
+      maxLength: 1000
+  required:
+    - "command"
+  additionalProperties: false

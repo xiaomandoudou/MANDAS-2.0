@@ -1,0 +1,157 @@
+
+services:
+  # 数据库服务
+  postgres:
+    image: postgres:15
+    container_name: mandas-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mandas"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis 消息队列
+  redis:
+    image: redis:7-alpine
+    container_name: mandas-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ChromaDB 向量数据库
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: mandas-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Ollama LLM 服务
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mandas-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "/bin/ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # API Gateway (脊椎 - 调度中心)
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: mandas-api-gateway
+    ports:
+      - "8081:8080"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - CHROMADB_URL=http://chromadb:8000
+      - OLLAMA_URL=http://ollama:11434
+      - JWT_SECRET=${JWT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/mandas/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Agent Worker (神经系统)
+  agent-worker:
+    build:
+      context: ./services/agent-worker
+      dockerfile: Dockerfile
+    container_name: mandas-agent-worker
+    environment:
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - CHROMADB_URL=http://chromadb:8000
+      - OLLAMA_URL=http://ollama:11434
+      - LOG_LEVEL=${LOG_LEVEL}
+      - TOOLS_DIRECTORY=/app/tools.d
+      - MAX_AGENT_ROUNDS=20
+      - SHORT_TERM_MEMORY_TTL=3600
+      - MAX_CONTAINER_MEMORY=1g
+      - CONTAINER_TIMEOUT=600
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+      ollama:
+        condition: service_started
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/agent-worker/tools.d:/app/tools.d:ro
+      - ./services/agent-worker/configs:/app/configs:ro
+      - ./logs:/app/logs
+    privileged: true
+
+  # Frontend UI (面孔)
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: mandas-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8081
+      - VITE_WS_URL=ws://localhost:8081
+    depends_on:
+      - api-gateway
+    volumes:
+      - ./services/frontend/src:/app/src
+      - ./services/frontend/public:/app/public
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
+  ollama_data:
+
+networks:
+  default:
+    name: mandas-network
