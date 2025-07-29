@@ -1,0 +1,45 @@
+models:
+  llama3:8b:
+    capabilities: ["general", "chat", "reasoning"]
+    response_time: "fast"
+    token_cost: "low"
+    max_context: 4096
+    description: "轻量级模型，适合一般对话和简单推理"
+    
+  qwen3:72b:
+    capabilities: ["coding", "analysis", "complex_reasoning"]
+    response_time: "slow"
+    token_cost: "high"
+    max_context: 8192
+    description: "大型模型，擅长编程任务和复杂分析"
+    
+  codellama:34b:
+    capabilities: ["coding", "debugging", "code_review"]
+    response_time: "medium"
+    token_cost: "medium"
+    max_context: 16384
+    description: "专业代码模型，适合编程和调试任务"
+    
+  qwen3-gguf:
+    capabilities: ["general", "coding", "analysis"]
+    response_time: "medium"
+    token_cost: "medium"
+    max_context: 8192
+    description: "量化版本，平衡性能和资源消耗"
+
+routing_strategies:
+  - name: "llm_based"
+    description: "基于LLM的智能路由决策"
+    enabled: true
+    
+  - name: "keyword_rules"
+    description: "基于关键词规则的路由"
+    enabled: true
+    
+  - name: "embedding_similarity"
+    description: "基于嵌入相似度的路由"
+    enabled: false
+    
+  - name: "load_balancing"
+    description: "负载均衡路由"
+    enabled: false

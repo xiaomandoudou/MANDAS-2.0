@@ -1,6 +1,6 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
@@ -9,4 +9,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
-});
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    strictPort: true,
+    hmr: {
+      clientPort: 3000
+    }
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 3000,
+    strictPort: true,
+    allowedHosts: ['devin-engineer-app-tunnel-ae7udgqu.devinapps.com']
+  }
+})

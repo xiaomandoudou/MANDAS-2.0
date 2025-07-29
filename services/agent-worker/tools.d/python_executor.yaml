@@ -1,0 +1,19 @@
+name: "python_executor"
+description: "在安全沙箱中执行Python代码"
+category: "code_execution"
+version: "1.0.0"
+author: "MANDAS System"
+enabled: true
+timeout: 300
+rate_limit_per_min: 10
+required_permissions: ["code_execution"]
+parameters:
+  type: "object"
+  properties:
+    code:
+      type: "string"
+      description: "要执行的Python代码"
+      maxLength: 10000
+  required:
+    - "code"
+  additionalProperties: false
