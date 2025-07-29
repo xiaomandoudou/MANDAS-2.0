@@ -51,7 +51,7 @@ class TaskLogs(Base):
     task_id = Column(UUID(as_uuid=True), nullable=False)
     level = Column(String(20), nullable=False)
     message = Column(Text, nullable=False)
-    metadata = Column(JSONB, default={})
+    log_metadata = Column(JSONB, default={})
     trace_id = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

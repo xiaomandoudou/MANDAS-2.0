@@ -1,8 +1,12 @@
 import asyncio
 from typing import Dict, Any, List, Optional
 from loguru import logger
-from autogen_agentchat.agents import UserProxyAgent, AssistantAgent
-from autogen_agentchat.teams import RoundRobinGroupChat
+try:
+    from autogen_agentchat.agents import UserProxyAgent, AssistantAgent
+    from autogen_agentchat.teams import RoundRobinGroupChat
+except ImportError:
+    from autogen import UserProxyAgent, AssistantAgent
+    from autogen import GroupChat as RoundRobinGroupChat
 
 from app.core.config import settings
 from app.core.tools.tool_registry import ToolRegistry

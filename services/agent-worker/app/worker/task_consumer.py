@@ -19,6 +19,33 @@ class TaskConsumer:
         self.agent_manager = None
         self.tool_executor = None
         self.running = False
+        self.websocket_url = f"http://api-gateway:8080/mandas/v1/tasks"
+    
+    async def broadcast_step_update(self, task_id: str, step_update: Dict[str, Any]):
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f"{self.websocket_url}/{task_id}/broadcast",
+                    json={
+                        "type": "step_status_update",
+                        "payload": step_update
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Failed to broadcast step update: {e}")
+    
+    async def broadcast_log(self, task_id: str, log_entry: Dict[str, Any]):
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f"{self.websocket_url}/{task_id}/broadcast",
+                    json={
+                        "type": "log",
+                        "payload": log_entry
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Failed to broadcast log: {e}")
 
     async def initialize(self):
         self.redis_client = await get_redis()

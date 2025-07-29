@@ -13,6 +13,34 @@ from loguru import logger
 
 router = APIRouter()
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, Set[WebSocket]] = {}
+    
+    async def connect(self, websocket: WebSocket, task_id: str):
+        await websocket.accept()
+        if task_id not in self.active_connections:
+            self.active_connections[task_id] = set()
+        self.active_connections[task_id].add(websocket)
+    
+    def disconnect(self, websocket: WebSocket, task_id: str):
+        if task_id in self.active_connections:
+            self.active_connections[task_id].discard(websocket)
+    
+    async def broadcast_to_task(self, task_id: str, message: dict):
+        if task_id in self.active_connections:
+            disconnected = set()
+            for connection in self.active_connections[task_id]:
+                try:
+                    await connection.send_json(message)
+                except:
+                    disconnected.add(connection)
+            
+            for conn in disconnected:
+                self.active_connections[task_id].discard(conn)
+
+manager = ConnectionManager()
+
 
 class TaskCreate(BaseModel):
     prompt: str
@@ -167,24 +195,49 @@ async def list_tasks(
 
 @router.websocket("/{task_id}/stream")
 async def websocket_task_stream(websocket: WebSocket, task_id: str):
-    await websocket.accept()
-    
     try:
         task_uuid = uuid.UUID(task_id)
+        await manager.connect(websocket, task_id)
+        
+        async for db in get_db():
+            result = await db.execute(select(Task).where(Task.id == task_uuid))
+            task = result.scalar_one_or_none()
+            if task:
+                await websocket.send_json({
+                    "type": "task_state",
+                    "payload": {
+                        "task_id": task_id,
+                        "status": task.status,
+                        "plan": task.plan
+                    }
+                })
+            break
         
         while True:
             try:
                 await websocket.receive_text()
             except WebSocketDisconnect:
-                logger.info(f"WebSocket disconnected for task {task_id}")
-                break
-            except Exception as e:
-                logger.error(f"WebSocket error for task {task_id}: {e}")
                 break
                 
     except ValueError:
         await websocket.send_json({"error": "Invalid task ID format"})
-        await websocket.close()
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
-        await websocket.close()
+    finally:
+        manager.disconnect(websocket, task_id)
+
+@router.post("/{task_id}/broadcast")
+async def broadcast_websocket_event(
+    task_id: str,
+    event: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        await manager.broadcast_to_task(task_id, event)
+        return {"status": "broadcasted"}
+    except Exception as e:
+        logger.error(f"Failed to broadcast event: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to broadcast event"
+        )
