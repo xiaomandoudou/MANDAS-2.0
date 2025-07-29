@@ -3,8 +3,9 @@ import json
 import uuid
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from loguru import logger
+import aiohttp
 
 from app.core.config import settings
 from app.core.database import get_db, Task
@@ -56,6 +57,10 @@ class TaskConsumer:
         from app.agents.manager.group_chat_manager import MandasGroupChatManager
         from app.memory.memory_manager import MemoryManager
         from app.llm.llm_router import LLMRouter
+        from app.core.agents.default_agent import DefaultAgent
+        from app.core.logging.enhanced_logger import EnhancedLogger
+        
+        self.logger = EnhancedLogger("TaskConsumer")
         
         self.memory_manager = MemoryManager()
         self.tool_registry = ToolRegistry(getattr(settings, 'tools_directory', '/app/tools.d'))
@@ -66,18 +71,25 @@ class TaskConsumer:
             self.tool_registry, self.execution_guard, self.memory_manager
         )
         
+        self.default_agent = DefaultAgent(
+            agent_config={"mode": "production"},
+            tool_registry=self.tool_registry,
+            memory_manager=self.memory_manager
+        )
+        
         await self.memory_manager.initialize()
         await self.execution_guard.initialize()
         await self.tool_registry.initialize()
         await self.llm_router.initialize()
         await self.llm_router_agent.initialize()
+        await self.default_agent.initialize()
         
         self.agent_manager = AgentManager()
         self.tool_executor = ToolExecutor()
         await self.agent_manager.initialize()
         await self.tool_executor.initialize()
         
-        logger.info("Task Consumer with V0.6 modules initialized successfully")
+        self.logger.info("Task Consumer with V1.2 architecture initialized successfully")
 
     async def start_consuming(self):
         self.running = True
@@ -133,80 +145,86 @@ class TaskConsumer:
 
     async def execute_task(self, db: AsyncSession, task: Task):
         task_id = str(task.id)
-        logger.info(f"Executing task {task_id}: {task.prompt[:100]}...")
         
-        try:
-            await db.execute(
-                update(Task)
-                .where(Task.id == task.id)
-                .values(status="RUNNING", updated_at=func.now())
-            )
-            await db.commit()
+        with self.logger.trace_context(task_id=task_id) as trace_id:
+            self.logger.info(f"Executing task {task_id}: {task.prompt[:100]}...")
             
-            await self._pre_process_task(task_id, task.prompt, task.config or {})
-            
-            available_tools = [tool.name for tool in self.tool_registry.list_tools()]
-            routing_decision = await self.llm_router_agent.decide(
-                task.prompt, available_tools, {"task_id": task_id}
-            )
-            
-            logger.info(f"Routing decision for task {task_id}: {routing_decision}")
-            
-            if routing_decision.get("complexity") == "high" or len(available_tools) > 0:
-                result = await self.group_chat_manager.process_task(task_id, task.prompt, task.config or {})
-            else:
-                # 降级到原有AgentManager
-                result = await self.agent_manager.process_task(
-                    task_id=task_id,
-                    prompt=task.prompt,
-                    config=task.config or {}
+            try:
+                await db.execute(
+                    update(Task)
+                    .where(Task.id == task.id)
+                    .values(status="RUNNING", updated_at=func.now())
                 )
-            
-            await self._post_execute(task_id, result)
-            
-            await db.execute(
-                update(Task)
-                .where(Task.id == task.id)
-                .values(
-                    status="COMPLETED",
-                    result=result,
-                    updated_at=func.now()
+                await db.commit()
+                
+                self.logger.log_task_transition(task_id, "QUEUED", "RUNNING")
+                
+                await self._pre_process_task(task_id, task.prompt, task.config or {})
+                
+                available_tools = [tool.name for tool in self.tool_registry.list_tools()]
+                routing_decision = await self.llm_router_agent.decide(
+                    task.prompt, available_tools, {"task_id": task_id, "trace_id": trace_id}
                 )
-            )
-            await db.commit()
-            
-            logger.info(f"Task {task_id} completed successfully")
-            
-        except Exception as e:
-            logger.error(f"Task {task_id} execution failed: {e}")
-            
-            await self._on_failure(task_id, str(e))
-            
-            retry_count = task.retry_count + 1
-            if retry_count < settings.max_retry_count:
+                
+                self.logger.info(f"Routing decision for task {task_id}: {routing_decision}")
+                
+                if routing_decision.get("complexity") == "high" or len(available_tools) > 5:
+                    result = await self.group_chat_manager.process_task(
+                        task_id, task.prompt, task.config or {}
+                    )
+                else:
+                    result = await self.default_agent.process_task(
+                        task_id, task.prompt, {"trace_id": trace_id, **(task.config or {})}
+                    )
+                
+                await self._post_execute(task_id, result)
+                
                 await db.execute(
                     update(Task)
                     .where(Task.id == task.id)
                     .values(
-                        status="QUEUED",
-                        retry_count=retry_count,
+                        status="COMPLETED",
+                        result=result,
                         updated_at=func.now()
                     )
                 )
-                logger.info(f"Task {task_id} queued for retry ({retry_count}/{settings.max_retry_count})")
-            else:
-                await db.execute(
-                    update(Task)
-                    .where(Task.id == task.id)
-                    .values(
-                        status="FAILED",
-                        result={"error": str(e)},
-                        updated_at=func.now()
+                await db.commit()
+                
+                self.logger.log_task_transition(task_id, "RUNNING", "COMPLETED")
+                self.logger.info(f"Task {task_id} completed successfully")
+                
+            except Exception as e:
+                self.logger.error(f"Task {task_id} execution failed: {e}")
+                
+                await self._on_failure(task_id, str(e))
+                
+                retry_count = task.retry_count + 1
+                if retry_count < settings.max_retry_count:
+                    await db.execute(
+                        update(Task)
+                        .where(Task.id == task.id)
+                        .values(
+                            status="QUEUED",
+                            retry_count=retry_count,
+                            updated_at=func.now()
+                        )
                     )
-                )
-                logger.error(f"Task {task_id} failed after {settings.max_retry_count} retries")
-            
-            await db.commit()
+                    self.logger.log_task_transition(task_id, "RUNNING", "QUEUED")
+                    self.logger.info(f"Task {task_id} queued for retry ({retry_count}/{settings.max_retry_count})")
+                else:
+                    await db.execute(
+                        update(Task)
+                        .where(Task.id == task.id)
+                        .values(
+                            status="FAILED",
+                            result={"error": str(e)},
+                            updated_at=func.now()
+                        )
+                    )
+                    self.logger.log_task_transition(task_id, "RUNNING", "FAILED")
+                    self.logger.error(f"Task {task_id} failed after {settings.max_retry_count} retries")
+                
+                await db.commit()
 
     async def handle_task_error(self, task_id: str, error: str):
         try:

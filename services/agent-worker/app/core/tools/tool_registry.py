@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from pathlib import Path
 from loguru import logger
+from app.core.base_tool import BaseTool
 
 
 @dataclass
@@ -43,12 +44,14 @@ class ToolRegistry:
     def __init__(self, tools_directory: str = "/app/tools.d"):
         self.tools_directory = Path(tools_directory)
         self.tools: Dict[str, Tool] = {}
+        self.tool_instances: Dict[str, BaseTool] = {}
         self.permission_cache: Dict[str, bool] = {}
     
     async def initialize(self):
         """初始化工具注册表"""
         try:
             await self.load_tools_from_directory()
+            await self.load_tool_implementations()
             logger.info(f"Tool Registry initialized with {len(self.tools)} tools")
         except Exception as e:
             logger.error(f"Error initializing Tool Registry: {e}")
@@ -236,12 +239,59 @@ class ToolRegistry:
             "tools_directory": str(self.tools_directory)
         }
     
+    async def load_tool_implementations(self):
+        """Load BaseTool implementations"""
+        try:
+            from app.core.tools.impl.file_reader_tool import FileReaderTool
+            from app.core.tools.impl.code_runner_tool import CodeRunnerTool
+            
+            implementations = [
+                FileReaderTool(),
+                CodeRunnerTool()
+            ]
+            
+            for tool_impl in implementations:
+                await tool_impl.initialize()
+                self.tool_instances[tool_impl.metadata.name] = tool_impl
+                
+                tool_config = Tool(
+                    name=tool_impl.metadata.name,
+                    description=tool_impl.metadata.description,
+                    parameters=await tool_impl.get_parameter_schema(),
+                    required_permissions=tool_impl.metadata.required_permissions,
+                    timeout=tool_impl.metadata.timeout,
+                    rate_limit_per_min=tool_impl.metadata.rate_limit_per_min,
+                    category=tool_impl.metadata.category,
+                    version=tool_impl.metadata.version,
+                    author=tool_impl.metadata.author,
+                    enabled=tool_impl.metadata.enabled
+                )
+                
+                self.tools[tool_config.name] = tool_config
+                logger.info(f"Registered tool implementation: {tool_config.name}")
+                
+        except Exception as e:
+            logger.error(f"Error loading tool implementations: {e}")
+    
+    async def execute_tool(self, tool_name: str, parameters: Dict[str, Any], user_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute tool using BaseTool implementation"""
+        if tool_name not in self.tool_instances:
+            return {
+                "success": False,
+                "error": f"Tool implementation not found: {tool_name}"
+            }
+        
+        tool_instance = self.tool_instances[tool_name]
+        return await tool_instance.execute(parameters, user_context)
+    
     async def reload_tools(self):
         """重新加载所有工具"""
         logger.info("Reloading tools from directory...")
         self.tools.clear()
+        self.tool_instances.clear()
         self.permission_cache.clear()
         await self.load_tools_from_directory()
+        await self.load_tool_implementations()
         logger.info(f"Reloaded {len(self.tools)} tools")
     
     def unregister_tool(self, tool_name: str) -> bool:
