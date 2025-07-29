@@ -13,7 +13,8 @@ export function useWebSocket({ taskId, onStepUpdate, onLogEntry, onTaskEnd }: We
   useEffect(() => {
     if (!taskId) return
 
-    const wsUrl = `ws://localhost:8081/mandas/v1/tasks/${taskId}/stream`
+    const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8081'
+    const wsUrl = `${WS_BASE_URL}/mandas/v1/tasks/${taskId}/stream`
     let ws: WebSocket | null = null
 
     try {
