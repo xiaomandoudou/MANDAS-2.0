@@ -5,9 +5,10 @@ interface WebSocketHookProps {
   onStepUpdate?: (update: any) => void
   onLogEntry?: (log: any) => void
   onTaskEnd?: (result: any) => void
+  onPlanGenerated?: (plan: any) => void
 }
 
-export function useWebSocket({ taskId, onStepUpdate, onLogEntry, onTaskEnd }: WebSocketHookProps) {
+export function useWebSocket({ taskId, onStepUpdate, onLogEntry, onTaskEnd, onPlanGenerated }: WebSocketHookProps) {
   const [connected, setConnected] = useState(false)
 
   useEffect(() => {
@@ -40,6 +41,8 @@ export function useWebSocket({ taskId, onStepUpdate, onLogEntry, onTaskEnd }: We
             onLogEntry?.(data.payload)
           } else if (data.type === 'task_end') {
             onTaskEnd?.(data.payload)
+          } else if (data.type === 'plan_generated') {
+            onPlanGenerated?.(data.payload)
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error)

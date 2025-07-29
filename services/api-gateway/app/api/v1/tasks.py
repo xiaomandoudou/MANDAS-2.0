@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSoc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Set
 import uuid
 from datetime import datetime
 
@@ -211,6 +211,18 @@ async def websocket_task_stream(websocket: WebSocket, task_id: str):
                         "plan": task.plan
                     }
                 })
+                
+                if task.plan:
+                    await websocket.send_json({
+                        "type": "plan_generated",
+                        "payload": {
+                            "plan_id": task.plan.get("plan_id"),
+                            "task_id": task_id,
+                            "summary": task.plan.get("summary", "执行计划已生成"),
+                            "version": task.plan.get("version", "v1"),
+                            "steps": task.plan.get("steps", [])
+                        }
+                    })
             break
         
         while True:
@@ -225,6 +237,169 @@ async def websocket_task_stream(websocket: WebSocket, task_id: str):
         logger.error(f"WebSocket connection error: {e}")
     finally:
         manager.disconnect(websocket, task_id)
+
+@router.get("/{task_id}/plan")
+async def get_task_plan(
+    task_id: str,
+    include_result: bool = False,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get task execution plan with optional result previews"""
+    try:
+        task_uuid = uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid task ID format"
+        )
+    
+    result = await db.execute(
+        select(Task).where(
+            Task.id == task_uuid,
+            Task.user_id == uuid.UUID(current_user["sub"])
+        )
+    )
+    task = result.scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if not task.plan:
+        return {
+            "plan_id": None,
+            "task_id": task_id,
+            "summary": "任务无需规划，直接进入执行阶段。",
+            "version": "v1",
+            "steps": []
+        }
+    
+    plan_data = task.plan
+    if include_result:
+        for step in plan_data.get("steps", []):
+            if "result_preview" not in step:
+                step["result_preview"] = None
+    else:
+        for step in plan_data.get("steps", []):
+            step.pop("result_preview", None)
+    
+    return plan_data
+
+
+@router.post("/{task_id}/plan/regenerate")
+async def regenerate_task_plan(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Regenerate task plan with new version"""
+    try:
+        task_uuid = uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid task ID format"
+        )
+    
+    result = await db.execute(
+        select(Task).where(
+            Task.id == task_uuid,
+            Task.user_id == uuid.UUID(current_user["sub"])
+        )
+    )
+    task = result.scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    current_version = task.plan.get("version", "v1") if task.plan else "v1"
+    version_num = int(current_version.replace("v", "")) + 1
+    new_version = f"v{version_num}"
+    
+    await publish_task_to_queue(f"regenerate_plan:{task_id}", 1)
+    
+    await manager.broadcast_to_task(task_id, {
+        "type": "plan_regeneration_started",
+        "payload": {
+            "task_id": task_id,
+            "new_version": new_version
+        }
+    })
+    
+    return {
+        "task_id": task_id,
+        "message": "Regeneration started.",
+        "plan_version": new_version
+    }
+
+
+@router.put("/internal/tasks/{task_id}/plan/steps/{step_id}")
+async def update_plan_step(
+    task_id: str,
+    step_id: int,
+    step_data: dict,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Internal endpoint for updating plan step status"""
+    try:
+        task_uuid = uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid task ID format"
+        )
+    
+    result = await db.execute(select(Task).where(Task.id == task_uuid))
+    task = result.scalar_one_or_none()
+    
+    if not task or not task.plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task or plan not found"
+        )
+    
+    plan = task.plan
+    steps = plan.get("steps", [])
+    
+    for step in steps:
+        if step.get("step_id") == step_id:
+            step.update({
+                "status": step_data.get("status", step.get("status")),
+                "result_preview": step_data.get("result_preview"),
+                "started_at": step_data.get("started_at"),
+                "completed_at": step_data.get("completed_at"),
+                "retry_count": step_data.get("retry_count", step.get("retry_count", 0))
+            })
+            break
+    
+    await db.execute(
+        update(Task)
+        .where(Task.id == task_uuid)
+        .values(plan=plan)
+    )
+    await db.commit()
+    
+    await manager.broadcast_to_task(task_id, {
+        "type": "step_status_update",
+        "payload": {
+            "step_id": step_id,
+            "status": step_data.get("status"),
+            "result_preview": step_data.get("result_preview"),
+            "started_at": step_data.get("started_at"),
+            "completed_at": step_data.get("completed_at"),
+            "retry_count": step_data.get("retry_count", 0)
+        }
+    })
+    
+    return {"status": "updated"}
+
 
 @router.post("/{task_id}/broadcast")
 async def broadcast_websocket_event(

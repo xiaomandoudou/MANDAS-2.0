@@ -35,6 +35,9 @@ export default function LogViewerComponent({
     return matchesText && matchesLevel
   })
 
+
+
+
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight

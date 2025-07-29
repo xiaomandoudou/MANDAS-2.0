@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ArrowLeft, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,12 +11,14 @@ import { Link } from 'react-router-dom'
 import DAGComponent from '@/components/DAGComponent'
 import LogViewerComponent from '@/components/LogViewerComponent'
 import ToolListComponent from '@/components/ToolListComponent'
+import PlanningView from '@/components/PlanningView'
 import { useWebSocket } from '@/hooks/useWebSocket'
 
 export default function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>()
   const [logs, setLogs] = useState<any[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
+  const queryClient = useQueryClient()
 
   const { data: task, isLoading, error } = useQuery({
     queryKey: ['task', taskId],
@@ -210,6 +212,14 @@ export default function TaskDetailPage() {
           </TabsContent>
 
           <TabsContent value="dag" className="space-y-6">
+            <PlanningView 
+              taskId={taskId!}
+              plan={taskData.plan}
+              onPlanRegenerate={() => {
+                queryClient.invalidateQueries({ queryKey: ['task', taskId] })
+              }}
+            />
+            
             <Card>
               <CardHeader>
                 <CardTitle>DAG 执行流程</CardTitle>
@@ -225,10 +235,19 @@ export default function TaskDetailPage() {
                               taskData.status === 'FAILED' ? 'FAILED' :
                               taskData.status === 'RUNNING' && index === 0 ? 'RUNNING' : 'QUEUED',
                       dependencies: index > 0 ? [index] : [],
-                      agent: step.agent || 'unknown'
+                      agent: step.agent || 'unknown',
+                      tool_name: step.tool_name,
+                      tool_parameters: step.tool_parameters,
+                      started_at: step.started_at,
+                      completed_at: step.completed_at,
+                      retry_count: step.retry_count || 0,
+                      result_preview: step.result_preview
                     }))} 
                     onStepClick={(stepId) => {
                       console.log('Selected step:', stepId)
+                    }}
+                    onStepRightClick={(stepId) => {
+                      console.log('Step right clicked:', stepId)
                     }}
                   />
                 ) : (

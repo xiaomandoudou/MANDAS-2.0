@@ -12,12 +12,17 @@ from app.core.config import settings
 from app.core.tools.tool_registry import ToolRegistry
 from app.core.security.execution_guard import ExecutionGuard
 from app.memory.memory_manager import MemoryManager
+from app.core.planning.planner import TaskPlanner
+from app.llm.llm_router import LLMRouter
 
 
 class PlannerAgent(AssistantAgent):
     """规划者Agent - 负责任务分析、规划和分解"""
     
-    def __init__(self, llm_config: Dict[str, Any]):
+    def __init__(self, llm_config: Dict[str, Any], task_planner: TaskPlanner, tool_registry: ToolRegistry):
+        self.task_planner = task_planner
+        self.tool_registry = tool_registry
+        
         system_message = """你是一个智能任务规划者(Planner)。你的核心职责是：
 
 1. **任务分析**: 深入理解用户需求，识别任务的核心目标和约束条件
@@ -42,6 +47,26 @@ class PlannerAgent(AssistantAgent):
             human_input_mode="NEVER",
             max_consecutive_auto_reply=10
         )
+    
+    async def create_task_plan(self, task_description: str, task_id: str):
+        """Create a structured task plan using TaskPlanner"""
+        try:
+            available_tools = [tool.name for tool in self.tool_registry.list_tools(enabled_only=True)]
+            plan = await self.task_planner.create_plan(task_description, available_tools, task_id)
+            return plan
+        except Exception as e:
+            logger.error(f"Failed to create task plan: {e}")
+            return None
+    
+    async def regenerate_task_plan(self, task_id: str, task_description: str, current_version: str = "v1"):
+        """Regenerate a task plan with new version"""
+        try:
+            available_tools = [tool.name for tool in self.tool_registry.list_tools(enabled_only=True)]
+            plan = await self.task_planner.regenerate_plan(task_id, task_description, available_tools, current_version)
+            return plan
+        except Exception as e:
+            logger.error(f"Failed to regenerate task plan: {e}")
+            return None
 
 
 class EnhancedUserProxyAgent(UserProxyAgent):
@@ -134,10 +159,12 @@ class ReviewerAgent(AssistantAgent):
 class MandasGroupChatManager:
     """Mandas多Agent协同管理器"""
     
-    def __init__(self, tool_registry: ToolRegistry, execution_guard: ExecutionGuard, memory_manager: MemoryManager):
+    def __init__(self, tool_registry: ToolRegistry, execution_guard: ExecutionGuard, memory_manager: MemoryManager, llm_router: LLMRouter):
         self.tool_registry = tool_registry
         self.execution_guard = execution_guard
         self.memory_manager = memory_manager
+        self.llm_router = llm_router
+        self.task_planner = TaskPlanner(llm_router)
         self.agents = {}
         self.group_chat = None
         self.manager = None
@@ -145,7 +172,7 @@ class MandasGroupChatManager:
     async def initialize(self, llm_config: Dict[str, Any]):
         """初始化Agent群组"""
         try:
-            self.agents["planner"] = PlannerAgent(llm_config)
+            self.agents["planner"] = PlannerAgent(llm_config, self.task_planner, self.tool_registry)
             self.agents["user_proxy"] = EnhancedUserProxyAgent(
                 llm_config, self.tool_registry, self.execution_guard
             )
