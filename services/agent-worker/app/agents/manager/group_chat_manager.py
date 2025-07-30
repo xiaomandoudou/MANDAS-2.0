@@ -172,6 +172,8 @@ class MandasGroupChatManager:
     async def initialize(self, llm_config: Dict[str, Any]):
         """初始化Agent群组"""
         try:
+            self.llm_config = llm_config
+            
             self.agents["planner"] = PlannerAgent(llm_config, self.task_planner, self.tool_registry)
             self.agents["user_proxy"] = EnhancedUserProxyAgent(
                 llm_config, self.tool_registry, self.execution_guard
@@ -185,8 +187,9 @@ class MandasGroupChatManager:
             ]
             
             self.group_chat = RoundRobinGroupChat(
-                participants=agents_list,
-                max_turns=settings.max_agent_rounds
+                agents=agents_list,
+                messages=[],
+                max_round=settings.max_agent_rounds
             )
             
             logger.info("Group Chat Manager initialized successfully")
@@ -200,15 +203,32 @@ class MandasGroupChatManager:
         try:
             logger.info(f"Starting multi-agent collaboration for task {task_id}")
             
+            if self.group_chat is None:
+                logger.error(f"Group chat not initialized for task {task_id}")
+                return {
+                    "status": "error",
+                    "error": "Group chat not initialized",
+                    "task_id": task_id
+                }
+            
             context = await self.memory_manager.get_context_for_llm(prompt, task_id)
             
             enhanced_prompt = self._build_enhanced_prompt(task_id, prompt, context, config)
             
-            self.group_chat.messages = []
+            if hasattr(self.group_chat, 'messages'):
+                self.group_chat.messages = []
+            
+            from autogen import GroupChatManager
+            
+            group_chat_manager = GroupChatManager(
+                groupchat=self.group_chat,
+                llm_config=self.llm_config
+            )
             
             result = await asyncio.to_thread(
-                self.group_chat.run,
-                task=enhanced_prompt
+                group_chat_manager.initiate_chat,
+                self.agents["planner"],
+                message=enhanced_prompt
             )
             
             conversation_history = self._extract_conversation_history()
@@ -268,13 +288,14 @@ class MandasGroupChatManager:
     def _extract_conversation_history(self) -> List[Dict[str, Any]]:
         """提取对话历史"""
         conversation = []
-        for msg in self.group_chat.messages:
-            conversation.append({
-                "role": msg.get("role", "unknown"),
-                "name": msg.get("name", "unknown"),
-                "content": msg.get("content", ""),
-                "timestamp": msg.get("timestamp", "")
-            })
+        if self.group_chat and hasattr(self.group_chat, 'messages') and self.group_chat.messages:
+            for msg in self.group_chat.messages:
+                conversation.append({
+                    "role": msg.get("role", "unknown"),
+                    "name": msg.get("name", "unknown"),
+                    "content": msg.get("content", ""),
+                    "timestamp": msg.get("timestamp", "")
+                })
         return conversation
     
     def _analyze_final_result(self, conversation: List[Dict[str, Any]], task_id: str) -> str:

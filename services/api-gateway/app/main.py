@@ -6,6 +6,10 @@ import uvicorn
 from loguru import logger
 import sys
 
+if sys.platform == "win32":
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.redis_client import init_redis
@@ -83,6 +87,13 @@ app.include_router(
     prefix="/mandas/v1/memory", 
     tags=["memory"],
     dependencies=[Depends(get_current_user)]
+)
+
+app.include_router(
+    tasks.router,
+    prefix="/internal",
+    tags=["internal"],
+    include_in_schema=False
 )
 
 

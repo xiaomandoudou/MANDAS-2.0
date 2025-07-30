@@ -339,7 +339,7 @@ async def regenerate_task_plan(
     }
 
 
-@router.put("/internal/tasks/{task_id}/plan/steps/{step_id}")
+@router.put("/tasks/{task_id}/plan/steps/{step_id}")
 async def update_plan_step(
     task_id: str,
     step_id: int,

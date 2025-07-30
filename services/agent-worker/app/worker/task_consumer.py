@@ -84,6 +84,12 @@ class TaskConsumer:
         await self.llm_router_agent.initialize()
         await self.default_agent.initialize()
         
+        llm_config = {
+            "config_list": [{"model": "phi3:mini", "base_url": "http://ollama:11434/v1", "api_key": "dummy"}],
+            "temperature": 0.7
+        }
+        await self.group_chat_manager.initialize(llm_config)
+        
         self.agent_manager = AgentManager()
         self.tool_executor = ToolExecutor()
         await self.agent_manager.initialize()
