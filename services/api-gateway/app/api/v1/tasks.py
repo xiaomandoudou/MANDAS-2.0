@@ -199,31 +199,13 @@ async def websocket_task_stream(websocket: WebSocket, task_id: str):
         task_uuid = uuid.UUID(task_id)
         await manager.connect(websocket, task_id)
         
-        async for db in get_db():
-            result = await db.execute(select(Task).where(Task.id == task_uuid))
-            task = result.scalar_one_or_none()
-            if task:
-                await websocket.send_json({
-                    "type": "task_state",
-                    "payload": {
-                        "task_id": task_id,
-                        "status": task.status,
-                        "plan": task.plan
-                    }
-                })
-                
-                if task.plan:
-                    await websocket.send_json({
-                        "type": "plan_generated",
-                        "payload": {
-                            "plan_id": task.plan.get("plan_id"),
-                            "task_id": task_id,
-                            "summary": task.plan.get("summary", "执行计划已生成"),
-                            "version": task.plan.get("version", "v1"),
-                            "steps": task.plan.get("steps", [])
-                        }
-                    })
-            break
+        await websocket.send_json({
+            "type": "connection_established",
+            "payload": {
+                "task_id": task_id,
+                "message": "WebSocket connection established"
+            }
+        })
         
         while True:
             try:

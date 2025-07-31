@@ -67,8 +67,7 @@ app.include_router(auth.router, prefix="/mandas/v1/auth", tags=["auth"])
 app.include_router(
     tasks.router, 
     prefix="/mandas/v1/tasks", 
-    tags=["tasks"],
-    dependencies=[Depends(get_current_user)]
+    tags=["tasks"]
 )
 app.include_router(
     documents.router, 
