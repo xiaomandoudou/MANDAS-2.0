@@ -73,8 +73,8 @@ GPU	NVIDIA RTX 3090/4090/5090 (24GB+ VRAM)
 Bash
 
 # 1. 克隆仓库
-git clone https://github.com/your-repo/manus-agent-system.git
-cd manus-agent-system
+git clone https://github.com/xiaomandoudou/MANDAS-2.0.git
+cd MANDAS-2.0
 
 # 2. 启动服务 (预计使用Docker Compose)
 docker-compose up -d
